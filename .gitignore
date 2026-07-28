@@ -3,4 +3,3 @@ dist/
 target/
 *.log
 .DS_Store
-src-tauri/icons/
