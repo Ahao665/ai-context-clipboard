@@ -14,3 +14,19 @@ export interface ActionDef {
   contentType: ContentType | 'any';
   category: 'analysis' | 'transform' | 'generate' | 'debug';
 }
+
+export interface ActionResult {
+  actionId: ActionId;
+  content: string;
+  success: boolean;
+  error?: string;
+}
+
+export interface ActionContext {
+  content: string;
+  contentType: ContentType;
+}
+
+export interface SummarizeInput {
+  content: string;
+}
