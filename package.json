@@ -1,0 +1,15 @@
+{
+  "name": "ai-context-clipboard",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter @ai-clipboard/ui dev",
+    "build": "pnpm --filter @ai-clipboard/ui build",
+    "tauri": "pnpm exec tauri",
+    "lint": "eslint packages/ --ext .ts,.tsx",
+    "typecheck": "pnpm exec tsc --noEmit -p packages/types && pnpm exec tsc --noEmit -p packages/core && pnpm exec tsc --noEmit -p packages/ui"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}
