@@ -1,27 +1,29 @@
-import { AIClient } from './ai/client';
-import { buildSummarizePrompt } from './prompt-templates';
-import type { ActionResult } from '@ai-clipboard/types';
+import { AIClient } from '../ai/client';
+import type { ActionId, ActionResult } from '@ai-clipboard/types';
 
-export async function executeSummarize(
+export async function executeAction(
   client: AIClient,
   content: string,
+  buildPrompt: (content: string) => string,
+  actionId: ActionId,
+  emptyMessage?: string,
 ): Promise<ActionResult> {
   if (!content || !content.trim()) {
     return {
-      actionId: 'text.summarize',
+      actionId,
       content: '',
       success: false,
-      error: '内容为空，无法总结',
+      error: emptyMessage ?? '内容为空，无法处理',
     };
   }
 
   try {
-    const prompt = buildSummarizePrompt(content);
+    const prompt = buildPrompt(content);
     const response = await client.chat([{ role: 'user', content: prompt }]);
     const result = response.choices[0]?.message?.content ?? '';
 
     return {
-      actionId: 'text.summarize',
+      actionId,
       content: result,
       success: true,
     };
@@ -32,7 +34,7 @@ export async function executeSummarize(
         : 'AI 调用失败';
 
     return {
-      actionId: 'text.summarize',
+      actionId,
       content: '',
       success: false,
       error: message,

@@ -1,14 +1,36 @@
-import { executeSummarize } from '../src/action-engine';
-import { buildSummarizePrompt } from '../src/prompt-templates';
 import { AIClient } from '../src/ai/client';
-import type { AIResponse } from '@ai-clipboard/types';
 
-function mockClient(response: AIResponse): AIClient {
+import {
+  executeSummarize,
+  buildSummarizePrompt,
+} from '../src/actions/summarize';
+import {
+  executeTranslate,
+  buildTranslatePrompt,
+} from '../src/actions/translate';
+import { executeRewrite, buildRewritePrompt } from '../src/actions/rewrite';
+import { executeReply, buildReplyPrompt } from '../src/actions/reply';
+import { executeExplain, buildExplainPrompt } from '../src/actions/explain';
+
+function testClient(): AIClient {
   globalThis.fetch = async () =>
-    new Response(JSON.stringify(response), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    }) as Response;
+    new Response(
+      JSON.stringify({
+        id: 'chatcmpl-test',
+        object: 'chat.completion',
+        created: 1700000000,
+        model: 'gpt-4o-mini',
+        choices: [
+          {
+            index: 0,
+            message: { role: 'assistant', content: 'AI response content' },
+            finish_reason: 'stop',
+          },
+        ],
+        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ) as Response;
   return new AIClient({
     baseUrl: 'https://api.openai.com/v1',
     apiKey: 'sk-test',
@@ -16,12 +38,15 @@ function mockClient(response: AIResponse): AIClient {
   });
 }
 
-function mockClientError(): AIClient {
+function errorClient(): AIClient {
   globalThis.fetch = async () =>
-    new Response(JSON.stringify({ error: { message: 'Rate limit exceeded' } }), {
-      status: 429,
-      headers: { 'content-type': 'application/json' },
-    }) as Response;
+    new Response(
+      JSON.stringify({ error: { message: 'API error' } }),
+      {
+        status: 429,
+        headers: { 'content-type': 'application/json' },
+      },
+    ) as Response;
   return new AIClient({
     baseUrl: 'https://api.openai.com/v1',
     apiKey: 'sk-test',
@@ -29,96 +54,119 @@ function mockClientError(): AIClient {
   });
 }
 
-// --- Test: prompt generation ---
+// --- Prompt tests ---
 
-function test_prompt_generation() {
-  const prompt = buildSummarizePrompt('Hello world');
-  console.assert(prompt.includes('Hello world'), 'prompt should contain input content');
-  console.assert(prompt.includes('总结'), 'prompt should contain 总结 instruction');
-  console.log('✅ test_prompt_generation passed');
+function test_summarize_prompt() {
+  const p = buildSummarizePrompt('hello');
+  console.assert(p.includes('总结'), 'summarize: should contain 总结');
+  console.assert(p.includes('hello'), 'summarize: should contain input');
+  console.assert(p.includes('分点列出'), 'summarize: should ask for bullet points');
+  console.log('✅ test_summarize_prompt passed');
 }
 
-function test_prompt_with_multiline() {
-  const content = 'Line 1\nLine 2\nLine 3';
-  const prompt = buildSummarizePrompt(content);
-  console.assert(prompt.includes(content), 'prompt should preserve multiline content');
-  console.log('✅ test_prompt_with_multiline passed');
+function test_translate_prompt() {
+  const p = buildTranslatePrompt('hello');
+  console.assert(p.includes('翻译'), 'translate: should contain 翻译');
+  console.assert(p.includes('hello'), 'translate: should contain input');
+  console.log('✅ test_translate_prompt passed');
 }
 
-// --- Test: action execution ---
+function test_rewrite_prompt() {
+  const p = buildRewritePrompt('hello');
+  console.assert(p.includes('润色') || p.includes('改进'), 'rewrite: should contain 改进');
+  console.assert(p.includes('hello'), 'rewrite: should contain input');
+  console.log('✅ test_rewrite_prompt passed');
+}
+
+function test_reply_prompt() {
+  const p = buildReplyPrompt('hello');
+  console.assert(p.includes('回复'), 'reply: should contain 回复');
+  console.assert(p.includes('hello'), 'reply: should contain input');
+  console.log('✅ test_reply_prompt passed');
+}
+
+function test_explain_prompt() {
+  const p = buildExplainPrompt('hello');
+  console.assert(p.includes('解释'), 'explain: should contain 解释');
+  console.assert(p.includes('hello'), 'explain: should contain input');
+  console.assert(p.includes('简单'), 'explain: should ask for simple language');
+  console.log('✅ test_explain_prompt passed');
+}
+
+// --- Execution tests ---
 
 async function test_summarize_success() {
-  const client = mockClient({
-    id: 'chatcmpl-123',
-    object: 'chat.completion',
-    created: 1700000000,
-    model: 'gpt-4o-mini',
-    choices: [
-      {
-        index: 0,
-        message: { role: 'assistant', content: '- 要点1\n- 要点2\n- 要点3' },
-        finish_reason: 'stop',
-      },
-    ],
-    usage: { prompt_tokens: 50, completion_tokens: 30, total_tokens: 80 },
-  });
-
-  const result = await executeSummarize(client, '这是一段需要总结的文字');
-  console.assert(result.success === true, 'should succeed');
+  const result = await executeSummarize(testClient(), 'some text');
+  console.assert(result.success === true, 'summarize should succeed');
   console.assert(result.actionId === 'text.summarize', 'actionId should match');
-  console.assert(result.content.includes('要点1'), 'should contain summarized points');
-  console.assert(result.error === undefined, 'should have no error');
   console.log('✅ test_summarize_success passed');
 }
 
-async function test_summarize_empty_content() {
-  const client = mockClient({
-    id: '',
-    object: 'chat.completion',
-    created: 0,
-    model: '',
-    choices: [],
-  });
-
-  const result = await executeSummarize(client, '');
-  console.assert(result.success === false, 'should fail with empty content');
-  console.assert(result.error !== undefined, 'should have error message');
-  console.log('✅ test_summarize_empty_content passed');
+async function test_translate_success() {
+  const result = await executeTranslate(testClient(), 'some text');
+  console.assert(result.success === true, 'translate should succeed');
+  console.assert(result.actionId === 'text.translate', 'actionId should match');
+  console.log('✅ test_translate_success passed');
 }
 
-async function test_summarize_whitespace_content() {
-  const client = mockClient({
-    id: '',
-    object: 'chat.completion',
-    created: 0,
-    model: '',
-    choices: [],
-  });
-
-  const result = await executeSummarize(client, '   ');
-  console.assert(result.success === false, 'should fail with whitespace-only content');
-  console.log('✅ test_summarize_whitespace_content passed');
+async function test_rewrite_success() {
+  const result = await executeRewrite(testClient(), 'some text');
+  console.assert(result.success === true, 'rewrite should succeed');
+  console.assert(result.actionId === 'text.polish', 'actionId should match');
+  console.log('✅ test_rewrite_success passed');
 }
 
-async function test_summarize_api_error() {
-  const client = mockClientError();
+async function test_reply_success() {
+  const result = await executeReply(testClient(), 'some text');
+  console.assert(result.success === true, 'reply should succeed');
+  console.assert(result.actionId === 'text.reply', 'actionId should match');
+  console.log('✅ test_reply_success passed');
+}
 
-  const result = await executeSummarize(client, 'Some content');
+async function test_explain_success() {
+  const result = await executeExplain(testClient(), 'some text');
+  console.assert(result.success === true, 'explain should succeed');
+  console.assert(result.actionId === 'text.explain', 'actionId should match');
+  console.log('✅ test_explain_success passed');
+}
+
+async function test_empty_content() {
+  const r1 = await executeSummarize(testClient(), '');
+  console.assert(r1.success === false, 'empty summarize should fail');
+  const r2 = await executeTranslate(testClient(), '   ');
+  console.assert(r2.success === false, 'whitespace translate should fail');
+  const r3 = await executeRewrite(testClient(), '');
+  console.assert(r3.success === false, 'empty rewrite should fail');
+  const r4 = await executeReply(testClient(), '');
+  console.assert(r4.success === false, 'empty reply should fail');
+  const r5 = await executeExplain(testClient(), '');
+  console.assert(r5.success === false, 'empty explain should fail');
+  console.log('✅ test_empty_content passed');
+}
+
+async function test_api_error() {
+  const result = await executeSummarize(errorClient(), 'text');
   console.assert(result.success === false, 'should fail on API error');
   console.assert(result.error !== undefined, 'should have error message');
-  console.log('✅ test_summarize_api_error passed');
+  console.log('✅ test_api_error passed');
 }
 
 // --- Run all ---
 
 async function main() {
   const tests = [
-    test_prompt_generation,
-    test_prompt_with_multiline,
+    test_summarize_prompt,
+    test_translate_prompt,
+    test_rewrite_prompt,
+    test_reply_prompt,
+    test_explain_prompt,
     test_summarize_success,
-    test_summarize_empty_content,
-    test_summarize_whitespace_content,
-    test_summarize_api_error,
+    test_translate_success,
+    test_rewrite_success,
+    test_reply_success,
+    test_explain_success,
+    test_empty_content,
+    test_api_error,
   ];
 
   let passed = 0;

@@ -4,6 +4,8 @@ export type ActionId =
   | 'text.summarize'
   | 'text.translate'
   | 'text.polish'
+  | 'text.reply'
+  | 'text.explain'
   | 'code.explain'
   | 'code.debug';
 
@@ -25,8 +27,4 @@ export interface ActionResult {
 export interface ActionContext {
   content: string;
   contentType: ContentType;
-}
-
-export interface SummarizeInput {
-  content: string;
 }
