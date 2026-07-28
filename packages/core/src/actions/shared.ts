@@ -1,5 +1,7 @@
 import { AIClient } from '../ai/client';
-import type { ActionId, ActionResult } from '@ai-clipboard/types';
+import type { ActionId, ActionResult, AIError } from '@ai-clipboard/types';
+
+const MAX_CHARS = 50_000;
 
 export async function executeAction(
   client: AIClient,
@@ -8,6 +10,7 @@ export async function executeAction(
   actionId: ActionId,
   emptyMessage?: string,
 ): Promise<ActionResult> {
+  // Empty content check
   if (!content || !content.trim()) {
     return {
       actionId,
@@ -17,10 +20,30 @@ export async function executeAction(
     };
   }
 
+  // Content length guard
+  if (content.length > MAX_CHARS) {
+    return {
+      actionId,
+      content: '',
+      success: false,
+      error: `内容过长（${content.length} 字符），限制 ${MAX_CHARS} 字符`,
+    };
+  }
+
   try {
     const prompt = buildPrompt(content);
     const response = await client.chat([{ role: 'user', content: prompt }]);
     const result = response.choices[0]?.message?.content ?? '';
+
+    // Empty result from AI
+    if (!result || !result.trim()) {
+      return {
+        actionId,
+        content: '',
+        success: false,
+        error: 'AI 未返回有效结果，请稍后重试',
+      };
+    }
 
     return {
       actionId,
@@ -28,16 +51,22 @@ export async function executeAction(
       success: true,
     };
   } catch (err: unknown) {
-    const message =
-      err && typeof err === 'object' && 'message' in err
-        ? (err as { message: string }).message
-        : 'AI 调用失败';
+    // Preserve structured AIError when available
+    if (err && typeof err === 'object' && 'message' in err && 'status' in err) {
+      const aiErr = err as AIError;
+      return {
+        actionId,
+        content: '',
+        success: false,
+        error: aiErr.message,
+      };
+    }
 
     return {
       actionId,
       content: '',
       success: false,
-      error: message,
+      error: 'AI 调用失败，请稍后重试',
     };
   }
 }

@@ -148,7 +148,64 @@ async function test_api_error() {
   const result = await executeSummarize(errorClient(), 'text');
   console.assert(result.success === false, 'should fail on API error');
   console.assert(result.error !== undefined, 'should have error message');
+  console.assert(typeof result.error === 'string', 'error should be a string');
   console.log('✅ test_api_error passed');
+}
+
+async function test_empty_api_result() {
+  // API returns valid response but with empty content
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        id: 'chatcmpl-test', object: 'chat.completion', created: 1700000000, model: 'gpt-4o-mini',
+        choices: [{ index: 0, message: { role: 'assistant', content: '' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 10, completion_tokens: 0, total_tokens: 10 },
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ) as Response;
+
+  const client = new AIClient({
+    baseUrl: 'https://api.openai.com/v1', apiKey: 'sk-test', model: 'gpt-4o-mini',
+  });
+
+  const result = await executeSummarize(client, 'some text');
+  console.assert(result.success === false, 'empty API result should fail');
+  console.assert(result.error!.includes('未返回'), 'should mention empty result');
+  console.log('✅ test_empty_api_result passed');
+}
+
+async function test_content_too_long() {
+  const longContent = 'x'.repeat(60_000); // exceeds 50k limit
+
+  const client = new AIClient({
+    baseUrl: 'https://api.openai.com/v1', apiKey: 'sk-test', model: 'gpt-4o-mini',
+  });
+
+  const result = await executeSummarize(client, longContent);
+  console.assert(result.success === false, 'too-long content should fail');
+  console.assert(result.error!.includes('过长'), 'should mention length limit');
+  console.log('✅ test_content_too_long passed');
+}
+
+async function test_content_just_at_limit() {
+  const content = 'x'.repeat(50_000); // at limit, should pass content check
+
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        id: 'chatcmpl-test', object: 'chat.completion', created: 1700000000, model: 'gpt-4o-mini',
+        choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ) as Response;
+
+  const client = new AIClient({
+    baseUrl: 'https://api.openai.com/v1', apiKey: 'sk-test', model: 'gpt-4o-mini',
+  });
+
+  const result = await executeSummarize(client, content);
+  console.assert(result.error === undefined || result.success === true, 'content at limit should be allowed');
+  console.log('✅ test_content_just_at_limit passed');
 }
 
 // --- Run all ---
@@ -167,6 +224,9 @@ async function main() {
     test_explain_success,
     test_empty_content,
     test_api_error,
+    test_empty_api_result,
+    test_content_too_long,
+    test_content_just_at_limit,
   ];
 
   let passed = 0;

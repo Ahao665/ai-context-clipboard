@@ -16,10 +16,12 @@ interface AIState {
 }
 
 const NO_API_KEY_MSG = '请先在设置中配置 API Key';
+const NO_CONTENT_MSG = '没有可处理的内容';
 
 export function useAI() {
   const [state, setState] = useState<AIState>({ loading: false, result: null });
   const clientRef = useRef<AIClient | null>(null);
+  const runningRef = useRef(false);
   const { aiConfig, loadConfig } = useSettingsStore();
 
   useEffect(() => {
@@ -38,6 +40,19 @@ export function useAI() {
       content: string,
       executor: (client: AIClient, content: string) => Promise<ActionResult>,
     ) => {
+      // Double-click guard
+      if (runningRef.current) return;
+
+      // Content guard
+      if (!content || !content.trim()) {
+        setState({
+          loading: false,
+          result: { actionId, content: '', success: false, error: NO_CONTENT_MSG },
+        });
+        return;
+      }
+
+      // API key guard
       if (!clientRef.current) {
         setState({
           loading: false,
@@ -46,9 +61,20 @@ export function useAI() {
         return;
       }
 
+      runningRef.current = true;
       setState({ loading: true, result: null });
-      const actionResult = await executor(clientRef.current, content);
-      setState({ loading: false, result: actionResult });
+
+      try {
+        const actionResult = await executor(clientRef.current, content);
+        setState({ loading: false, result: actionResult });
+      } catch {
+        setState({
+          loading: false,
+          result: { actionId, content: '', success: false, error: '操作失败，请稍后重试' },
+        });
+      } finally {
+        runningRef.current = false;
+      }
     },
     [],
   );
