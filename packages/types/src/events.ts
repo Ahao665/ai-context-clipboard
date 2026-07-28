@@ -1,4 +1,4 @@
-import type { ClipboardEntry, ContentType } from './clipboard';
+import type { ContentType } from './clipboard';
 
 export interface ClipboardChangedPayload {
   id: string;
