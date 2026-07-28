@@ -63,3 +63,14 @@ export async function saveAIConfig(config: AIProviderConfig): Promise<void> {
     setSetting('ai.model', config.model),
   ]);
 }
+
+// --- Privacy ---
+
+export async function checkPrivacyAccepted(): Promise<boolean> {
+  const val = await getSetting('ai_privacy_accepted');
+  return val === 'true';
+}
+
+export async function acceptPrivacy(): Promise<void> {
+  await setSetting('ai_privacy_accepted', 'true');
+}

@@ -1,16 +1,25 @@
-import { useState, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { HistoryList } from './components/HistoryList';
 import { ActionBar } from './components/ActionBar';
 import type { ActionBarAction } from './components/ActionBar';
 import { AIResultView } from './components/AIResultView';
+import { PrivacyDialog } from './components/PrivacyDialog';
 import { useClipboard } from './hooks/useClipboard';
 import { useAI } from './hooks/useAI';
 import { useClipboardStore } from './stores/clipboard-store';
+import { useSettingsStore } from './stores/settings-store';
 import './App.css';
+
+interface PendingAction {
+  label: string;
+  handler: () => void;
+}
 
 export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const { entries } = useClipboardStore();
+  const { privacyAccepted, privacyChecked, checkPrivacy, acceptPrivacyAction } = useSettingsStore();
   const {
     state,
     runSummarize,
@@ -23,7 +32,34 @@ export default function App() {
 
   useClipboard();
 
+  useEffect(() => {
+    checkPrivacy();
+  }, [checkPrivacy]);
+
   const selectedEntry = entries.find((e) => e.id === selectedId);
+
+  const withPrivacy = useCallback(
+    (label: string, fn: () => void) => {
+      if (privacyAccepted) {
+        fn();
+      } else {
+        setPendingAction({ label, handler: fn });
+      }
+    },
+    [privacyAccepted],
+  );
+
+  const handlePrivacyConfirm = async (dontAskAgain: boolean) => {
+    if (dontAskAgain) {
+      await acceptPrivacyAction();
+    }
+    setPendingAction(null);
+    pendingAction?.handler();
+  };
+
+  const handlePrivacyCancel = () => {
+    setPendingAction(null);
+  };
 
   const withContent = useCallback(
     (fn: (content: string) => void) => {
@@ -35,11 +71,11 @@ export default function App() {
   );
 
   const actions: ActionBarAction[] = [
-    { id: 'summarize', label: '总结', title: '提取内容要点', handler: () => withContent(runSummarize) },
-    { id: 'translate', label: '翻译', title: '翻译为中文', handler: () => withContent(runTranslate) },
-    { id: 'rewrite', label: '润色', title: '改进表达和语法', handler: () => withContent(runRewrite) },
-    { id: 'reply', label: '回复', title: '生成自然回复', handler: () => withContent(runReply) },
-    { id: 'explain', label: '解释', title: '用简单语言解释', handler: () => withContent(runExplain) },
+    { id: 'summarize', label: '总结', title: '提取内容要点', handler: () => withContent((c) => withPrivacy('总结', () => runSummarize(c))) },
+    { id: 'translate', label: '翻译', title: '翻译为中文', handler: () => withContent((c) => withPrivacy('翻译', () => runTranslate(c))) },
+    { id: 'rewrite', label: '润色', title: '改进表达和语法', handler: () => withContent((c) => withPrivacy('润色', () => runRewrite(c))) },
+    { id: 'reply', label: '回复', title: '生成自然回复', handler: () => withContent((c) => withPrivacy('回复', () => runReply(c))) },
+    { id: 'explain', label: '解释', title: '用简单语言解释', handler: () => withContent((c) => withPrivacy('解释', () => runExplain(c))) },
   ];
 
   const handleBack = () => {
@@ -47,35 +83,52 @@ export default function App() {
     clearResult();
   };
 
-  if (selectedEntry) {
+  if (!privacyChecked) {
     return (
       <div className="app">
-        <header className="app-header">
-          <button className="back-btn" onClick={handleBack}>
-            ← 返回
-          </button>
-        </header>
-        <main className="app-main">
-          <div className="detail-view">
-            <div className="detail-content">
-              {selectedEntry.content_preview || '(empty)'}
-            </div>
-            <ActionBar actions={actions} disabled={state.loading} />
-            <AIResultView result={state.result} loading={state.loading} />
-          </div>
-        </main>
+        <div className="history-status">加载中...</div>
       </div>
     );
   }
 
   return (
     <div className="app">
-      <header className="app-header">
-        <h1>AI Context Clipboard</h1>
-      </header>
-      <main className="app-main">
-        <HistoryList onSelect={setSelectedId} />
-      </main>
+      {pendingAction && selectedEntry?.content && (
+        <PrivacyDialog
+          content={selectedEntry.content}
+          actionLabel={pendingAction.label}
+          onConfirm={handlePrivacyConfirm}
+          onCancel={handlePrivacyCancel}
+        />
+      )}
+
+      {selectedEntry ? (
+        <>
+          <header className="app-header">
+            <button className="back-btn" onClick={handleBack}>
+              ← 返回
+            </button>
+          </header>
+          <main className="app-main">
+            <div className="detail-view">
+              <div className="detail-content">
+                {selectedEntry.content_preview || '(empty)'}
+              </div>
+              <ActionBar actions={actions} disabled={state.loading} />
+              <AIResultView result={state.result} loading={state.loading} />
+            </div>
+          </main>
+        </>
+      ) : (
+        <>
+          <header className="app-header">
+            <h1>AI Context Clipboard</h1>
+          </header>
+          <main className="app-main">
+            <HistoryList onSelect={setSelectedId} />
+          </main>
+        </>
+      )}
     </div>
   );
 }
