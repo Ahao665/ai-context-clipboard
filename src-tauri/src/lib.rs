@@ -1,5 +1,6 @@
 mod clipboard;
 mod commands;
+mod shortcut;
 mod storage;
 
 use clipboard::ClipboardContent;
@@ -14,6 +15,13 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, shortcut, event| {
+                    shortcut::manager::handle_shortcut(app, shortcut, &event.state);
+                })
+                .build(),
+        )
         .setup(|app| {
             let app_dir = app
                 .path()
@@ -21,6 +29,8 @@ pub fn run() {
                 .expect("failed to get app data dir");
             let db = Database::new(app_dir).expect("failed to initialize database");
             app.manage(db);
+
+            shortcut::manager::register_alt_space(app.handle());
 
             let app_handle = app.handle().clone();
             std::thread::spawn(move || {
