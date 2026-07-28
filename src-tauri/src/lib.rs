@@ -2,7 +2,7 @@ mod clipboard;
 
 use clipboard::ClipboardContent;
 use std::sync::mpsc;
-use tauri::Manager;
+use tauri::Emitter;
 
 pub fn run() {
     let (tx, rx) = mpsc::channel::<ClipboardContent>();

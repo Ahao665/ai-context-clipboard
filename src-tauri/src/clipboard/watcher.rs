@@ -37,7 +37,7 @@ pub fn start_clipboard_watcher(tx: mpsc::Sender<ClipboardContent>) {
                 last_hash = content.content_hash.clone();
                 let _ = tx.send(content);
             }
-            thread::sleep(Duration::from_millis(500));
+            thread::sleep(Duration::from_millis(300));
         }
     });
 }
@@ -53,20 +53,18 @@ fn get_clipboard_text() -> ClipboardContent {
             return ClipboardContent::new(None);
         }
 
-        let text = if let Ok(handle) = GetClipboardData(CF_UNICODETEXT.0 as u32) {
+        // CF_UNICODETEXT = 13
+        let text = if let Ok(handle) = GetClipboardData(13) {
             if !handle.is_invalid() {
-                let ptr = GlobalLock(handle);
-                if let Ok(locked) = ptr {
-                    if !locked.is_null() {
-                        let ptr_u16 = locked as *const u16;
-                        let len = (0..).take_while(|&i| *ptr_u16.add(i) != 0).count();
-                        let slice = std::slice::from_raw_parts(ptr_u16, len);
-                        let s = String::from_utf16_lossy(slice);
-                        let _ = GlobalUnlock(handle);
-                        Some(s)
-                    } else {
-                        None
-                    }
+                let hg = HGLOBAL(handle.0);
+                let ptr = GlobalLock(hg);
+                if !ptr.is_null() {
+                    let ptr_u16 = ptr as *const u16;
+                    let len = (0..).take_while(|&i| *ptr_u16.add(i) != 0).count();
+                    let slice = std::slice::from_raw_parts(ptr_u16, len);
+                    let s = String::from_utf16_lossy(slice);
+                    let _ = GlobalUnlock(hg);
+                    Some(s)
                 } else {
                     None
                 }
