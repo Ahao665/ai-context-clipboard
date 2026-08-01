@@ -47,6 +47,21 @@ cd src-tauri && cargo tauri build
 
 构建产物在 `src-tauri/target/release/bundle/`。
 
+### MSI 安装包（WiX）
+
+```bash
+cd src-tauri && cargo tauri build --bundles msi
+```
+
+- **WiX Toolset 无需手动安装**：Tauri 在首次 MSI 打包时会自动从 GitHub 下载 WiX（
+  `wix314-binaries.zip`）并缓存到 `%LOCALAPPDATA%\tauri\WixTools314\`。
+- ⚠️ **首次打包必须联网**，且**不要中断构建进程**——上次后台构建就是在 WiX 下载/
+  打包完成前被终止，导致 `bundle/msi/` 目录从未生成，但 release `.exe` 却已产出，
+  表现很像「MSI 打包失败」。
+- MSI 产物位于 `src-tauri/target/release/bundle/msi/*.msi`。
+- 离线环境可手动把 `candle.exe`/`light.exe` 放入 `%LOCALAPPDATA%\tauri\WixTools314\`
+  跳过自动下载。
+
 ## 项目结构
 
 ```
