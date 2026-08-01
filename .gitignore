@@ -3,3 +3,7 @@ dist/
 target/
 *.log
 .DS_Store
+
+# Environment & secrets
+.env
+.env.*

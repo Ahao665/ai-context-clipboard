@@ -2,8 +2,6 @@
 
 > 不是普通剪贴板管理工具，而是你的本地 AI 助手入口。
 
-![Demo](docs/demo.gif)
-
 Ctrl+C 复制任何内容 → AI 自动理解 → 一键 AI 处理。  
 用 Rust 构建的 Windows 桌面应用，数据本地存储，AI 透明可控。
 
@@ -26,11 +24,11 @@ Ctrl+C 复制任何内容 → AI 自动理解 → 一键 AI 处理。
 
 ## 📥 安装
 
-从 [Releases](https://github.com/yourname/ai-context-clipboard/releases) 下载最新 `.msi` 安装包：
+从 [Releases](../../releases/latest) 下载最新 `.msi` 安装包：
 
 ```bash
 # 直接双击安装，或命令行：
-msiexec /i ai-context-clipboard-0.1.0.msi
+msiexec /i "AI Context Clipboard_0.1.0_x64_en-US.msi"
 ```
 
 ### 从源码构建
