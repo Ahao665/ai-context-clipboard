@@ -28,7 +28,7 @@ Ctrl+C 复制任何内容 → AI 自动理解 → 一键 AI 处理。
 
 ```bash
 # 直接双击安装，或命令行：
-msiexec /i "AI Context Clipboard_0.1.0_x64_en-US.msi"
+msiexec /i "AI.Context.Clipboard_0.1.0_x64_en-US.msi"
 ```
 
 ### 从源码构建
