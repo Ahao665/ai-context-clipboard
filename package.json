@@ -1,6 +1,7 @@
 {
   "name": "ai-context-clipboard",
   "private": true,
+  "packageManager": "pnpm@10.34.5",
   "scripts": {
     "dev": "pnpm --filter @ai-clipboard/ui dev",
     "build": "pnpm --filter @ai-clipboard/ui build",
