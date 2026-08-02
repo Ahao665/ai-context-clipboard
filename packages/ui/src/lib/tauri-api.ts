@@ -38,6 +38,10 @@ export async function findEntryByHash(
   return invoke('find_by_hash', { hash });
 }
 
+export async function setClipboard(content: string): Promise<void> {
+  await invoke('set_clipboard', { content });
+}
+
 // --- Settings ---
 
 export async function getSetting(key: string): Promise<string | null> {

@@ -48,6 +48,7 @@ pub fn run() {
             commands::storage::find_by_hash,
             commands::settings::get_setting,
             commands::settings::set_setting,
+            commands::clipboard::set_clipboard,
         ])
         .run(tauri::generate_context!())
         .expect("error while running application");

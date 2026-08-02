@@ -43,7 +43,7 @@ pub fn start_clipboard_watcher(tx: mpsc::Sender<ClipboardContent>) {
 }
 
 #[cfg(target_os = "windows")]
-fn get_clipboard_text() -> ClipboardContent {
+pub(crate) fn get_clipboard_text() -> ClipboardContent {
     unsafe {
         use windows::Win32::System::DataExchange::*;
         use windows::Win32::Foundation::*;
@@ -81,7 +81,7 @@ fn get_clipboard_text() -> ClipboardContent {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn get_clipboard_text() -> ClipboardContent {
+pub(crate) fn get_clipboard_text() -> ClipboardContent {
     ClipboardContent::new(None)
 }
 
