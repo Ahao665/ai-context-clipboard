@@ -64,7 +64,7 @@ interface Props {
 }
 
 export function CommandPalette({ onQuickPaste, onOpenDetail, onRunCommand, onHide }: Props) {
-  const { entries, query, searchResults, selectedIndex, setQuery, moveSelection } = useClipboardStore();
+  const { entries, query, searchResults, selectedIndex, isSearching, setQuery, moveSelection } = useClipboardStore();
   const inputRef = useRef<HTMLInputElement>(null);
 
   usePaletteSearch();
@@ -82,15 +82,18 @@ export function CommandPalette({ onQuickPaste, onOpenDetail, onRunCommand, onHid
   // Autofocus on mount and whenever the window regains focus (Alt+Space show).
   useEffect(() => {
     inputRef.current?.focus();
+    let disposed = false;
     let unlisten: (() => void) | null = null;
     getCurrentWindow()
       .onFocusChanged(({ payload: focused }) => {
         if (focused) inputRef.current?.focus();
       })
       .then((fn) => {
-        unlisten = fn;
+        if (disposed) fn();
+        else unlisten = fn;
       });
     return () => {
+      disposed = true;
       unlisten?.();
     };
   }, []);
@@ -164,11 +167,21 @@ export function CommandPalette({ onQuickPaste, onOpenDetail, onRunCommand, onHid
             ))}
           </div>
           <div className="palette-group-title">剪贴板历史</div>
-          <HistoryList onSelect={onOpenDetail} />
+          <HistoryList
+            onSelect={(id) => {
+              const idx = entries.findIndex((e) => e.id === id);
+              if (idx >= 0) moveSelection(idx - selectedIndex);
+              onOpenDetail(id);
+            }}
+          />
         </div>
       ) : (
         <div className="palette-results">
-          {searchResults?.groups.map((group) => (
+          {isSearching ? (
+            <div className="palette-status">搜索中…</div>
+          ) : (
+            <>
+              {searchResults?.groups.map((group) => (
             <Fragment key={group.kind}>
               <div className="palette-group-title">{group.title}</div>
               {group.items.map((item) => {
@@ -203,8 +216,10 @@ export function CommandPalette({ onQuickPaste, onOpenDetail, onRunCommand, onHid
               })}
             </Fragment>
           ))}
-          {(!searchResults || searchResults.groups.length === 0) && (
-            <div className="history-status">无匹配结果</div>
+              {(!searchResults || searchResults.groups.length === 0) && (
+                <div className="history-status">无匹配结果</div>
+              )}
+            </>
           )}
         </div>
       )}

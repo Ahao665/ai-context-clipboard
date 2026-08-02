@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { ActionId, ClipboardEntry } from '@ai-clipboard/types';
 import { CommandPalette } from './components/CommandPalette';
@@ -73,20 +73,26 @@ export default function App() {
     [selectedEntry],
   );
 
-  const commandRunners: Record<string, (c: string) => void> = {
-    'text.summarize': runSummarize,
-    'text.translate': runTranslate,
-    'text.polish': runRewrite,
-    'text.reply': runReply,
-    'text.explain': runExplain,
-  };
-  const commandLabels: Record<string, string> = {
-    'text.summarize': '总结',
-    'text.translate': '翻译',
-    'text.polish': '润色',
-    'text.reply': '回复',
-    'text.explain': '解释',
-  };
+  const commandRunners = useMemo<Record<string, (c: string) => void>>(
+    () => ({
+      'text.summarize': runSummarize,
+      'text.translate': runTranslate,
+      'text.polish': runRewrite,
+      'text.reply': runReply,
+      'text.explain': runExplain,
+    }),
+    [runSummarize, runTranslate, runRewrite, runReply, runExplain],
+  );
+  const commandLabels = useMemo<Record<string, string>>(
+    () => ({
+      'text.summarize': '总结',
+      'text.translate': '翻译',
+      'text.polish': '润色',
+      'text.reply': '回复',
+      'text.explain': '解释',
+    }),
+    [],
+  );
 
   const handlePaletteCommand = useCallback(
     (_commandId: string, actionId: ActionId, target: ClipboardEntry | null) => {
