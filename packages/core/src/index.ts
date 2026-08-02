@@ -5,3 +5,6 @@ export { executeTranslate, buildTranslatePrompt } from './actions/translate';
 export { executeRewrite, buildRewritePrompt } from './actions/rewrite';
 export { executeReply, buildReplyPrompt } from './actions/reply';
 export { executeExplain, buildExplainPrompt } from './actions/explain';
+export { fuzzyMatch } from './palette/fuzzy';
+export { PALETTE_COMMANDS } from './palette/commands';
+export { composePaletteResults } from './palette/search';
