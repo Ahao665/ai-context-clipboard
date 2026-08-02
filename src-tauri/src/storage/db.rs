@@ -1,4 +1,4 @@
-use rusqlite::{Connection, Result};
+use rusqlite::{Connection, OptionalExtension, Result};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -78,6 +78,41 @@ impl Database {
                 ('privacy.ask_before_send', 'true', 0),
                 ('ui.max_history', '500', 0);",
         )?;
+
+        // FTS5 trigram index over clipboard content — MVP Chinese/English substring search.
+        // NOTE: detail='full' (not 'none') is required: the trigram tokenizer emits one
+        // token per 3-char window, so a MATCH term becomes a phrase query, which FTS5
+        // only supports when positional detail is stored.
+        conn.execute_batch(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS clipboard_entries_fts USING fts5(
+                content,
+                content_preview,
+                content_hash UNINDEXED,
+                tokenize = 'trigram',
+                detail = 'full'
+            );",
+        )?;
+
+        // One-time backfill so pre-existing v0.1.0 rows are immediately searchable.
+        // Guarded by a settings flag → idempotent across app restarts.
+        let backfilled = conn
+            .query_row(
+                "SELECT value FROM app_settings WHERE key = 'fts.backfilled'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        if backfilled.is_none() {
+            conn.execute_batch(
+                "INSERT INTO clipboard_entries_fts (content, content_preview, content_hash)
+                 SELECT content, content_preview, content_hash
+                 FROM clipboard_entries WHERE is_deleted = 0;",
+            )?;
+            conn.execute(
+                "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('fts.backfilled', '1', ?1)",
+                rusqlite::params![chrono::Utc::now().timestamp_millis()],
+            )?;
+        }
         Ok(())
     }
 }

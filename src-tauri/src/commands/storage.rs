@@ -22,8 +22,10 @@ pub fn search_entries(
     db: State<'_, Database>,
     query: String,
     limit: Option<i64>,
+    offset: Option<i64>,
+    content_type: Option<String>,
 ) -> Result<Vec<ClipboardEntry>, String> {
-    db.search_entries(&query, limit.unwrap_or(50))
+    db.search_entries(&query, limit.unwrap_or(50), offset.unwrap_or(0), content_type.as_deref())
         .map_err(|e| e.to_string())
 }
 

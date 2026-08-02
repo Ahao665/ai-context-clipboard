@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { ClipboardEntry, AIProviderConfig } from '@ai-clipboard/types';
+import type { ClipboardEntry, AIProviderConfig, ContentType } from '@ai-clipboard/types';
 
 // --- Clipboard ---
 
@@ -17,8 +17,15 @@ export async function listEntries(
 export async function searchEntries(
   query: string,
   limit?: number,
+  offset?: number,
+  contentType?: ContentType,
 ): Promise<ClipboardEntry[]> {
-  return invoke('search_entries', { query, limit: limit ?? 50 });
+  return invoke('search_entries', {
+    query,
+    limit: limit ?? 50,
+    offset: offset ?? 0,
+    contentType,
+  });
 }
 
 export async function deleteEntry(id: string): Promise<void> {
