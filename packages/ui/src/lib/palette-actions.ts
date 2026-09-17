@@ -59,6 +59,9 @@ export function handlePaletteKey(
         : { type: 'none' };
     }
     if (selectedItem?.kind === 'command') {
+      // A highlighted command row means no entry row is selected, so `topEntry`
+      // (the best history match) is the correct target. This matches the browse-mode
+      // chips, which pass the highlighted entry.
       return { type: 'runCommand', command: selectedItem.command, target: topEntry };
     }
     if (selectedItem?.kind === 'entry') {

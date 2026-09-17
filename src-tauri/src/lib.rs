@@ -28,6 +28,19 @@ pub fn run() {
                 .app_data_dir()
                 .expect("failed to get app data dir");
             let db = Database::new(app_dir).expect("failed to initialize database");
+
+            // Startup housekeeping: drop previously soft-deleted rows and trim
+            // history to the configured cap. Best-effort — a failure here must
+            // not stop the app from starting, so errors are intentionally ignored.
+            let max_history: i64 = db
+                .get_setting("ui.max_history")
+                .ok()
+                .flatten()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(500);
+            let _ = db.purge_deleted();
+            let _ = db.enforce_history_cap(max_history);
+
             app.manage(db);
 
             shortcut::manager::register_alt_space(app.handle());
@@ -49,6 +62,11 @@ pub fn run() {
             commands::settings::get_setting,
             commands::settings::set_setting,
             commands::clipboard::set_clipboard,
+            commands::maintenance::count_entries,
+            commands::maintenance::clear_history,
+            commands::maintenance::purge_deleted,
+            commands::maintenance::enforce_history_cap,
+            commands::maintenance::latest_entry,
         ])
         .run(tauri::generate_context!())
         .expect("error while running application");

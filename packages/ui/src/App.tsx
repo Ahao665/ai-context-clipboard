@@ -6,6 +6,7 @@ import { ActionBar } from './components/ActionBar';
 import type { ActionBarAction } from './components/ActionBar';
 import { AIResultView } from './components/AIResultView';
 import { PrivacyDialog } from './components/PrivacyDialog';
+import { SettingsPanel } from './components/SettingsPanel';
 import { useClipboard } from './hooks/useClipboard';
 import { useAI } from './hooks/useAI';
 import { setClipboard } from './lib/tauri-api';
@@ -21,6 +22,7 @@ interface PendingAction {
 export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
   const { entries } = useClipboardStore();
   const { privacyAccepted, privacyChecked, checkPrivacy, acceptPrivacyAction } = useSettingsStore();
   const {
@@ -149,17 +151,27 @@ export default function App() {
         />
       )}
 
+      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
+
       {selectedEntry ? (
         <>
           <header className="app-header">
             <button className="back-btn" onClick={handleBack}>
               ← 返回
             </button>
+            <button
+              className="header-icon-btn"
+              onClick={() => setShowSettings(true)}
+              title="设置"
+              aria-label="设置"
+            >
+              ⚙
+            </button>
           </header>
           <main className="app-main">
             <div className="detail-view">
               <div className="detail-content">
-                {selectedEntry.content_preview || '(empty)'}
+                {selectedEntry.content ?? '(空)'}
               </div>
               <ActionBar actions={actions} disabled={state.loading} />
               <AIResultView result={state.result} loading={state.loading} />
@@ -168,8 +180,16 @@ export default function App() {
         </>
       ) : (
         <>
-          <header className="app-header">
+          <header className="app-header brand-header">
             <h1>AI Context Clipboard</h1>
+            <button
+              className="header-icon-btn"
+              onClick={() => setShowSettings(true)}
+              title="设置"
+              aria-label="设置"
+            >
+              ⚙
+            </button>
           </header>
           <main className="app-main">
             <CommandPalette

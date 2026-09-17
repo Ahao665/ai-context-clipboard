@@ -1,4 +1,5 @@
 import type { ClipboardEntry } from '@ai-clipboard/types';
+import { entryPreview } from '../lib/entry-preview';
 
 interface Props {
   entry: ClipboardEntry;
@@ -31,7 +32,7 @@ export function HistoryItem({ entry, isSelected, onClick }: Props) {
     >
       <span className="history-icon">{icon}</span>
       <div className="history-body">
-        <div className="history-preview">{entry.content_preview || '(empty)'}</div>
+        <div className="history-preview">{entryPreview(entry)}</div>
         <div className="history-meta">
           <span>{time}</span>
           {entry.source_app && <span>{entry.source_app}</span>}

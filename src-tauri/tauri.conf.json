@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicegram/nicegram-tauri-plus/v2/tooling/cli/schema.json",
   "productName": "AI Context Clipboard",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "identifier": "com.aiclipboard.desktop",
   "build": {
     "frontendDist": "../packages/ui/dist",

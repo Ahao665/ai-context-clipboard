@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// Shared row mapper — maps a `SELECT *` / explicit-column row of `clipboard_entries`
 /// into a `ClipboardEntry`. Keeps the (previously duplicated) mappers in one place.
-fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClipboardEntry> {
+pub(crate) fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClipboardEntry> {
     Ok(ClipboardEntry {
         id: row.get(0)?,
         content_hash: row.get(1)?,

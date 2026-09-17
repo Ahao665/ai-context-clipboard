@@ -6,6 +6,7 @@ import type { ActionId, ClipboardEntry } from '@ai-clipboard/types';
 import { useClipboardStore } from '../stores/clipboard-store';
 import { usePaletteSearch } from '../hooks/usePaletteSearch';
 import { HistoryList } from './HistoryList';
+import { entryPreview, entryPreviewShort } from '../lib/entry-preview';
 import {
   flattenPaletteItems,
   handlePaletteKey,
@@ -194,7 +195,7 @@ export function CommandPalette({ onQuickPaste, onOpenDetail, onRunCommand, onHid
                       icon="🤖"
                       title={item.command.label}
                       subtitle={item.command.description}
-                      hint={topEntry ? `对「${topEntry.content_preview.slice(0, 20)}…」执行` : '无可用条目'}
+                      hint={topEntry ? `对「${entryPreviewShort(topEntry)}」执行` : '无可用条目'}
                       selected={selected}
                       onSelect={() => selectByIndex(globalIndex)}
                       onActivate={() => onRunCommand(item.command.id, item.command.actionId, topEntry)}
@@ -205,7 +206,7 @@ export function CommandPalette({ onQuickPaste, onOpenDetail, onRunCommand, onHid
                   <PaletteRow
                     key={`ent-${item.entry.id}`}
                     icon={TYPE_ICON[item.entry.content_type] || '📋'}
-                    title={item.entry.content_preview || '(empty)'}
+                    title={entryPreview(item.entry)}
                     subtitle={formatTime(item.entry.created_at)}
                     hint="Enter 复制"
                     selected={selected}

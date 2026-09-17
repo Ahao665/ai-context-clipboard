@@ -7,7 +7,7 @@
     "build": "pnpm --filter @ai-clipboard/ui build",
     "tauri": "pnpm exec tauri",
     "typecheck": "pnpm exec tsc --noEmit -p packages/types && pnpm exec tsc --noEmit -p packages/core && pnpm exec tsc --noEmit -p packages/ui",
-    "test": "tsx packages/core/__tests__/fuzzy.test.ts && tsx packages/core/__tests__/commands.test.ts && tsx packages/core/__tests__/palette-search.test.ts && tsx packages/ui/__tests__/clipboard-store.test.ts && tsx packages/ui/__tests__/palette-search-controller.test.ts && tsx packages/ui/__tests__/palette-actions.test.ts"
+    "test": "tsx packages/core/__tests__/fuzzy.test.ts && tsx packages/core/__tests__/commands.test.ts && tsx packages/core/__tests__/palette-search.test.ts && tsx packages/ui/__tests__/clipboard-store.test.ts && tsx packages/ui/__tests__/palette-search-controller.test.ts && tsx packages/ui/__tests__/palette-actions.test.ts && tsx packages/ui/__tests__/provider-presets.test.ts && tsx packages/ui/__tests__/entry-preview.test.ts"
   },
   "devDependencies": {
     "typescript": "^5.5.0",

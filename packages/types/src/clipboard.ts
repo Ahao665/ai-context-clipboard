@@ -6,8 +6,17 @@ export interface ClipboardEntry {
   content_hash: string;
   content_type: ContentType;
   subtype?: string;
-  content: string;
-  content_preview: string;
+  /**
+   * Full clipboard text. Nullable because the Rust layer stores it as
+   * `Option<String>` — an entry can carry only a preview (e.g. very large
+   * payloads stored out-of-line via `content_storage: 'file'`).
+   */
+  content: string | null;
+  /**
+   * Short preview used by list rows. Nullable for the same reason as `content`;
+   * always render through a fallback rather than assuming a string.
+   */
+  content_preview: string | null;
   content_storage: ContentStorage;
   content_ref?: string;
   content_size: number;

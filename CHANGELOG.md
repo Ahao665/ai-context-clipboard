@@ -2,6 +2,39 @@
 
 All notable changes to AI Context Clipboard are documented in this file.
 
+## [0.2.0] - 2026-09-17
+
+### Features
+
+- **Settings panel** — a real ⚙ settings surface, replacing the previously
+  documented-but-missing entry point. Configure the AI provider via presets
+  (DeepSeek / OpenAI / 通义千问 / Kimi / custom), toggle the privacy prompt,
+  view the stored entry count, and clear history.
+- **Clear history** — soft-delete every entry and purge the search index in one
+  transaction (`clear_history`).
+- **History cap enforcement** — `ui.max_history` is now actually enforced, on
+  startup and after each save. Previously the setting was written to the DB but
+  never read.
+- **Maintenance commands** — `purge_deleted` (hard-delete soft-deleted rows plus
+  a best-effort `VACUUM`) and `latest_entry` (most recent live entry).
+
+### Fixes
+
+- **Detail view showed only the preview** — the detail pane rendered the
+  200-character `content_preview` instead of the full `content`, so longer
+  entries were silently truncated.
+- **`content` / `content_preview` null-safety** — both are nullable in the Rust
+  layer (`Option<String>`) but were typed as required `string` in TypeScript.
+  The palette hint did `content_preview.slice(0, 20)`, which threw a `TypeError`
+  on a null preview. Both fields are now `string | null`, and every render path
+  goes through `entryPreview()` / `entryPreviewShort()` helpers with tests.
+
+### Docs
+
+- **`docs/BUILD-WINDOWS.md`** — documents the Git Bash `link.exe` shadowing
+  issue that breaks `cargo build`/`cargo test` on this machine, plus the
+  clipboard-test hang and stale build-lock workarounds.
+
 ## [0.1.1] - 2026-08-02
 
 ### Features

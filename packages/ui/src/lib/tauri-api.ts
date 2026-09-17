@@ -32,6 +32,26 @@ export async function deleteEntry(id: string): Promise<void> {
   await invoke('delete_entry', { id });
 }
 
+/** Soft-delete every non-deleted entry and purge the FTS index. Returns rows removed. */
+export async function clearHistory(): Promise<number> {
+  return invoke('clear_history');
+}
+
+/** Hard-delete soft-deleted rows + their FTS entries, then VACUUM. Returns rows purged. */
+export async function purgeDeleted(): Promise<number> {
+  return invoke('purge_deleted');
+}
+
+/** Total number of live (non-deleted) entries — used for the settings footer. */
+export async function countEntries(): Promise<number> {
+  return invoke('count_entries');
+}
+
+/** Most recent live entry, or null when history is empty. */
+export async function latestEntry(): Promise<ClipboardEntry | null> {
+  return invoke('latest_entry');
+}
+
 export async function findEntryByHash(
   hash: string,
 ): Promise<ClipboardEntry | null> {
