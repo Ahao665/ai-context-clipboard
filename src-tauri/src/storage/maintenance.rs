@@ -93,12 +93,13 @@ impl Database {
     /// Most recent entry regardless of type — used by the palette's default target.
     pub fn latest_entry(&self) -> rusqlite::Result<Option<ClipboardEntry>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT * FROM clipboard_entries
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {} FROM clipboard_entries
              WHERE is_deleted = 0
-             ORDER BY created_at DESC
+             ORDER BY is_pinned DESC, created_at DESC
              LIMIT 1",
-        )?;
+            crate::storage::entries::ENTRY_COLUMNS
+        ))?;
         let mut rows = stmt.query_map([], super::entries::row_to_entry)?;
         match rows.next() {
             Some(Ok(entry)) => Ok(Some(entry)),
@@ -137,6 +138,7 @@ mod tests {
             source_app: Some("test".into()),
             source_window: None,
             is_deleted: false,
+            is_pinned: false,
             created_at,
             updated_at: created_at,
         }

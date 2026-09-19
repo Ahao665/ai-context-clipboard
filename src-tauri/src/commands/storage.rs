@@ -49,6 +49,12 @@ pub fn delete_entry(db: State<'_, Database>, id: String) -> Result<(), String> {
     db.delete_entry(&id).map_err(|e| e.to_string())
 }
 
+/// Flip an entry's pinned state. Returns the new state so the UI can stay in sync.
+#[tauri::command]
+pub fn toggle_pin(db: State<'_, Database>, id: String) -> Result<bool, String> {
+    db.toggle_pin(&id).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn find_by_hash(
     db: State<'_, Database>,

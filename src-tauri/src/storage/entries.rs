@@ -1,9 +1,20 @@
 use crate::storage::db::Database;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
-/// Shared row mapper — maps a `SELECT *` / explicit-column row of `clipboard_entries`
-/// into a `ClipboardEntry`. Keeps the (previously duplicated) mappers in one place.
+/// Canonical column order for every `clipboard_entries` read.
+///
+/// Queries must list these explicitly rather than using `SELECT *`: `is_pinned`
+/// was added via `ALTER TABLE`, which appends it *after* `updated_at`, whereas a
+/// freshly created table places it before `created_at`. Positional row mapping
+/// would therefore read the wrong values depending on how the database was
+/// created. An explicit list keeps both cases identical.
+pub(crate) const ENTRY_COLUMNS: &str = "id, content_hash, content_type, subtype, content, \
+     content_preview, content_storage, content_ref, content_size, source_app, source_window, \
+     is_deleted, is_pinned, created_at, updated_at";
+
+/// Shared row mapper — maps `ENTRY_COLUMNS` into a `ClipboardEntry`.
+/// Keeps the (previously duplicated) mappers in one place.
 pub(crate) fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClipboardEntry> {
     Ok(ClipboardEntry {
         id: row.get(0)?,
@@ -18,8 +29,9 @@ pub(crate) fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Clipboar
         source_app: row.get(9)?,
         source_window: row.get(10)?,
         is_deleted: row.get::<_, i32>(11)? != 0,
-        created_at: row.get(12)?,
-        updated_at: row.get(13)?,
+        is_pinned: row.get::<_, i32>(12)? != 0,
+        created_at: row.get(13)?,
+        updated_at: row.get(14)?,
     })
 }
 
@@ -37,6 +49,9 @@ pub struct ClipboardEntry {
     pub source_app: Option<String>,
     pub source_window: Option<String>,
     pub is_deleted: bool,
+    /// Pinned entries sort above everything else in list and search results.
+    #[serde(default)]
+    pub is_pinned: bool,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -48,8 +63,8 @@ impl Database {
             "INSERT OR REPLACE INTO clipboard_entries
              (id, content_hash, content_type, subtype, content, content_preview,
               content_storage, content_ref, content_size, source_app, source_window,
-              is_deleted, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+              is_deleted, is_pinned, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             params![
                 entry.id,
                 entry.content_hash,
@@ -63,6 +78,7 @@ impl Database {
                 entry.source_app,
                 entry.source_window,
                 entry.is_deleted,
+                entry.is_pinned,
                 entry.created_at,
                 entry.updated_at,
             ],
@@ -83,12 +99,13 @@ impl Database {
 
     pub fn list_entries(&self, limit: i64, offset: i64) -> rusqlite::Result<Vec<ClipboardEntry>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT * FROM clipboard_entries
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {} FROM clipboard_entries
              WHERE is_deleted = 0
-             ORDER BY created_at DESC
+             ORDER BY is_pinned DESC, created_at DESC
              LIMIT ?1 OFFSET ?2",
-        )?;
+            ENTRY_COLUMNS
+        ))?;
         let entries = stmt
             .query_map(params![limit, offset], row_to_entry)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -97,14 +114,38 @@ impl Database {
 
     pub fn find_by_hash(&self, hash: &str) -> rusqlite::Result<Option<ClipboardEntry>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT * FROM clipboard_entries WHERE content_hash = ?1 AND is_deleted = 0 LIMIT 1",
-        )?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {} FROM clipboard_entries WHERE content_hash = ?1 AND is_deleted = 0 LIMIT 1",
+            ENTRY_COLUMNS
+        ))?;
         let mut rows = stmt.query_map(params![hash], row_to_entry)?;
         match rows.next() {
             Some(Ok(entry)) => Ok(Some(entry)),
             _ => Ok(None),
         }
+    }
+
+    /// Flip the pinned flag for one entry. Returns the new state.
+    ///
+    /// An unknown id is not an error — it yields `false`, so a stale UI row
+    /// (deleted elsewhere) cannot crash the caller.
+    pub fn toggle_pin(&self, id: &str) -> rusqlite::Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE clipboard_entries
+             SET is_pinned = CASE is_pinned WHEN 1 THEN 0 ELSE 1 END,
+                 updated_at = ?1
+             WHERE id = ?2",
+            params![chrono::Utc::now().timestamp_millis(), id],
+        )?;
+        let state = conn
+            .query_row(
+                "SELECT is_pinned FROM clipboard_entries WHERE id = ?1",
+                params![id],
+                |row| Ok(row.get::<_, i32>(0)? != 0),
+            )
+            .optional()?;
+        Ok(state.unwrap_or(false))
     }
 
     pub fn search_entries(
@@ -119,13 +160,14 @@ impl Database {
 
         // Empty query → plain recent list (optionally type-filtered).
         if trimmed.is_empty() {
-            let mut stmt = conn.prepare(
-                "SELECT * FROM clipboard_entries
+            let mut stmt = conn.prepare(&format!(
+                "SELECT {} FROM clipboard_entries
                  WHERE is_deleted = 0
                    AND (?1 IS NULL OR content_type = ?1)
-                 ORDER BY created_at DESC
+                 ORDER BY is_pinned DESC, created_at DESC
                  LIMIT ?2 OFFSET ?3",
-            )?;
+                ENTRY_COLUMNS
+            ))?;
             let rows = stmt.query_map(params![content_type, limit, offset], row_to_entry)?;
             return rows.collect();
         }
@@ -137,22 +179,26 @@ impl Database {
             return Self::search_like(&conn, trimmed, limit, offset, content_type);
         }
 
-        // FTS5 trigram path. MVP: match + recency sort (no bm25 / no behavior learning).
+        // FTS5 trigram path. MVP: match + pinned/recency sort (no bm25).
         let escaped = trimmed.replace('"', "\"\"");
         let match_query = format!("\"{}\"", escaped);
         let result = (|| -> rusqlite::Result<Vec<ClipboardEntry>> {
-            let mut stmt = conn.prepare(
-                "SELECT e.id, e.content_hash, e.content_type, e.subtype, e.content,
-                        e.content_preview, e.content_storage, e.content_ref, e.content_size,
-                        e.source_app, e.source_window, e.is_deleted, e.created_at, e.updated_at
-                 FROM clipboard_entries_fts f
+            let mut stmt = conn.prepare(&format!(
+                "SELECT {} FROM clipboard_entries_fts f
                  JOIN clipboard_entries e ON e.content_hash = f.content_hash
                  WHERE clipboard_entries_fts MATCH ?1
                    AND e.is_deleted = 0
                    AND (?2 IS NULL OR e.content_type = ?2)
-                 ORDER BY e.created_at DESC
+                 ORDER BY e.is_pinned DESC, e.created_at DESC
                  LIMIT ?3 OFFSET ?4",
-            )?;
+                // Qualify every column with `e.` — both tables expose overlapping
+                // names (content, content_preview, content_hash).
+                ENTRY_COLUMNS
+                    .split(", ")
+                    .map(|c| format!("e.{}", c))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ))?;
             let rows = stmt.query_map(params![match_query, content_type, limit, offset], row_to_entry)?;
             rows.collect()
         })();
@@ -172,14 +218,15 @@ impl Database {
         content_type: Option<&str>,
     ) -> rusqlite::Result<Vec<ClipboardEntry>> {
         let pattern = format!("%{}%", query);
-        let mut stmt = conn.prepare(
-            "SELECT * FROM clipboard_entries
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {} FROM clipboard_entries
              WHERE is_deleted = 0
                AND (content LIKE ?1 OR content_preview LIKE ?1 OR source_app LIKE ?1)
                AND (?2 IS NULL OR content_type = ?2)
-             ORDER BY created_at DESC
+             ORDER BY is_pinned DESC, created_at DESC
              LIMIT ?3 OFFSET ?4",
-        )?;
+            ENTRY_COLUMNS
+        ))?;
         let rows = stmt
             .query_map(params![pattern, content_type, limit, offset], row_to_entry)?;
         rows.collect()
@@ -251,6 +298,7 @@ mod tests {
             source_app: Some("test".into()),
             source_window: None,
             is_deleted: false,
+            is_pinned: false,
             created_at: 1000,
             updated_at: 1000,
         };
@@ -276,6 +324,7 @@ mod tests {
             source_app: None,
             source_window: None,
             is_deleted: false,
+            is_pinned: false,
             created_at: 2000,
             updated_at: 2000,
         };
@@ -312,6 +361,7 @@ mod tests {
             source_app: None,
             source_window: None,
             is_deleted: false,
+            is_pinned: false,
             created_at: 3000,
             updated_at: 3000,
         };
@@ -338,6 +388,7 @@ mod tests {
             source_app: None,
             source_window: None,
             is_deleted: false,
+            is_pinned: false,
             created_at: 4000,
             updated_at: 4000,
         };
@@ -361,6 +412,7 @@ mod tests {
             source_app: Some("test".into()),
             source_window: None,
             is_deleted: false,
+            is_pinned: false,
             created_at: 1000,
             updated_at: 1000,
         }
@@ -529,5 +581,138 @@ mod tests {
         let results = db.search_entries("查询优化", 50, 0, None).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id, "z1");
+    }
+
+    // --- Pinning ------------------------------------------------------------
+
+    #[test]
+    fn test_toggle_pin_roundtrip() {
+        let db = test_db();
+        db.save_entry(&sample_entry("pin1", "pin me")).unwrap();
+
+        assert!(db.toggle_pin("pin1").unwrap(), "first toggle pins");
+        assert!(db.find_by_hash("hash-pin1").unwrap().unwrap().is_pinned);
+
+        assert!(!db.toggle_pin("pin1").unwrap(), "second toggle unpins");
+        assert!(!db.find_by_hash("hash-pin1").unwrap().unwrap().is_pinned);
+    }
+
+    #[test]
+    fn test_pinned_entries_sort_first_in_list() {
+        let db = test_db();
+        let mut old = sample_entry("old", "older but pinned");
+        old.created_at = 1000;
+        let mut new = sample_entry("new", "newest unpinned");
+        new.created_at = 5000;
+        db.save_entry(&old).unwrap();
+        db.save_entry(&new).unwrap();
+
+        // Without pinning the newest wins.
+        assert_eq!(db.list_entries(10, 0).unwrap()[0].id, "new");
+
+        db.toggle_pin("old").unwrap();
+        let entries = db.list_entries(10, 0).unwrap();
+        assert_eq!(entries[0].id, "old", "pinned entry must sort first");
+        assert_eq!(entries[1].id, "new");
+    }
+
+    #[test]
+    fn test_pinned_entries_sort_first_in_search() {
+        let db = test_db();
+        let mut a = sample_entry("sa", "shared keyword alpha");
+        a.created_at = 1000;
+        let mut b = sample_entry("sb", "shared keyword beta");
+        b.created_at = 5000;
+        db.save_entry(&a).unwrap();
+        db.save_entry(&b).unwrap();
+
+        assert_eq!(db.search_entries("shared", 10, 0, None).unwrap()[0].id, "sb");
+        db.toggle_pin("sa").unwrap();
+        assert_eq!(
+            db.search_entries("shared", 10, 0, None).unwrap()[0].id,
+            "sa",
+            "pinned entry must sort first in search too"
+        );
+    }
+
+    #[test]
+    fn test_pinned_survives_resave() {
+        let db = test_db();
+        db.save_entry(&sample_entry("rp", "resave me")).unwrap();
+        db.toggle_pin("rp").unwrap();
+
+        // Simulate a re-capture of the same content: the UI would send a fresh
+        // entry object with is_pinned unset, so read-modify-write must preserve it.
+        let stored = db.find_by_hash("hash-rp").unwrap().unwrap();
+        let mut updated = stored.clone();
+        updated.updated_at = 9999;
+        db.save_entry(&updated).unwrap();
+
+        assert!(
+            db.find_by_hash("hash-rp").unwrap().unwrap().is_pinned,
+            "pin state must round-trip through save"
+        );
+    }
+
+    #[test]
+    fn test_toggle_pin_unknown_id_is_false() {
+        let db = test_db();
+        // No row → the follow-up SELECT finds nothing; must not panic.
+        assert!(!db.toggle_pin("does-not-exist").unwrap());
+    }
+
+    /// Regression: `is_pinned` is added by ALTER TABLE on existing databases,
+    /// which appends it *after* `updated_at` — a different position than in a
+    /// freshly created table. Positional mapping used to read the wrong columns.
+    #[test]
+    fn test_migration_on_legacy_database_without_is_pinned() {
+        let id = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!("aicc_legacy_{}", id));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db_path = dir.join("clipboard.db");
+
+        // Build a v0.1.x-shaped table: no is_pinned column.
+        {
+            let conn = Connection::open(&db_path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE clipboard_entries (
+                    id TEXT PRIMARY KEY, content_hash TEXT NOT NULL,
+                    content_type TEXT NOT NULL DEFAULT 'text', subtype TEXT,
+                    content TEXT, content_preview TEXT,
+                    content_storage TEXT DEFAULT 'inline', content_ref TEXT,
+                    content_size INTEGER DEFAULT 0, source_app TEXT, source_window TEXT,
+                    is_deleted INTEGER DEFAULT 0,
+                    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+                );
+                INSERT INTO clipboard_entries
+                    (id, content_hash, content_type, content, content_preview, is_deleted, created_at, updated_at)
+                VALUES ('legacy1', 'hash-legacy1', 'text', 'legacy row content',
+                        'legacy row content', 0, 1234, 5678);",
+            )
+            .unwrap();
+        }
+
+        // Opening through Database must migrate and read the row correctly.
+        let db = Database::new(dir.clone()).unwrap();
+        let entry = db
+            .find_by_hash("hash-legacy1")
+            .unwrap()
+            .expect("legacy row must survive migration");
+        assert_eq!(entry.id, "legacy1");
+        assert_eq!(entry.created_at, 1234, "created_at must not be shifted by the new column");
+        assert_eq!(entry.updated_at, 5678, "updated_at must not be shifted");
+        assert!(!entry.is_pinned, "legacy rows default to unpinned");
+
+        // And the new column must be usable on that database.
+        assert!(db.toggle_pin("legacy1").unwrap());
+        assert!(db.find_by_hash("hash-legacy1").unwrap().unwrap().is_pinned);
+
+        // Reopening must not re-add the column (idempotent migration).
+        drop(db);
+        let reopened = Database::new(dir.clone()).unwrap();
+        assert!(reopened.find_by_hash("hash-legacy1").unwrap().unwrap().is_pinned);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

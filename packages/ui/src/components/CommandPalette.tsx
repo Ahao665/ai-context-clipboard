@@ -1,11 +1,12 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { PALETTE_COMMANDS } from '@ai-clipboard/core';
+import { CONTENT_TYPE_ICONS, CONTENT_TYPE_LABELS, PALETTE_COMMANDS } from '@ai-clipboard/core';
 import type { ActionId, ClipboardEntry } from '@ai-clipboard/types';
 import { useClipboardStore } from '../stores/clipboard-store';
 import { usePaletteSearch } from '../hooks/usePaletteSearch';
 import { HistoryList } from './HistoryList';
+import { TypeFilter } from './TypeFilter';
 import { entryPreview, entryPreviewShort } from '../lib/entry-preview';
 import {
   flattenPaletteItems,
@@ -13,15 +14,6 @@ import {
   isBrowseMode,
   resolveSelectedItem,
 } from '../lib/palette-actions';
-
-const TYPE_ICON: Record<string, string> = {
-  text: '📝',
-  code: '💻',
-  url: '🔗',
-  json: '📊',
-  email: '✉️',
-  unknown: '📋',
-};
 
 function formatTime(ms: number): string {
   return new Date(ms).toLocaleString('zh-CN', {
@@ -37,17 +29,21 @@ interface RowProps {
   title: string;
   subtitle: string;
   hint?: string;
+  badge?: string;
   selected: boolean;
   onSelect: () => void;
   onActivate: () => void;
 }
 
-function PaletteRow({ icon, title, subtitle, hint, selected, onSelect, onActivate }: RowProps) {
+function PaletteRow({ icon, title, subtitle, hint, badge, selected, onSelect, onActivate }: RowProps) {
   return (
     <div className={`palette-row ${selected ? 'selected' : ''}`} onClick={onActivate} onMouseEnter={onSelect}>
       <span className="palette-row-icon">{icon}</span>
       <div className="palette-row-body">
-        <div className="palette-row-title">{title}</div>
+        <div className="palette-row-title">
+          {title}
+          {badge ? <span className="palette-row-badge">{badge}</span> : null}
+        </div>
         <div className="palette-row-subtitle">
           {subtitle}
           {hint ? <span className="palette-row-hint">{hint}</span> : null}
@@ -65,7 +61,17 @@ interface Props {
 }
 
 export function CommandPalette({ onQuickPaste, onOpenDetail, onRunCommand, onHide }: Props) {
-  const { entries, query, searchResults, selectedIndex, isSearching, setQuery, moveSelection } = useClipboardStore();
+  const {
+    entries,
+    query,
+    contentType,
+    searchResults,
+    selectedIndex,
+    isSearching,
+    setQuery,
+    setContentType,
+    moveSelection,
+  } = useClipboardStore();
   const inputRef = useRef<HTMLInputElement>(null);
 
   usePaletteSearch();
@@ -152,6 +158,8 @@ export function CommandPalette({ onQuickPaste, onOpenDetail, onRunCommand, onHid
         onKeyDown={handleKeyDown}
       />
 
+      <TypeFilter active={contentType} onChange={setContentType} />
+
       {browsing ? (
         <div className="palette-results">
           <div className="palette-group-title">AI 命令（对选中的条目执行）</div>
@@ -205,10 +213,16 @@ export function CommandPalette({ onQuickPaste, onOpenDetail, onRunCommand, onHid
                 return (
                   <PaletteRow
                     key={`ent-${item.entry.id}`}
-                    icon={TYPE_ICON[item.entry.content_type] || '📋'}
+                    icon={CONTENT_TYPE_ICONS[item.entry.content_type] ?? '📋'}
                     title={entryPreview(item.entry)}
                     subtitle={formatTime(item.entry.created_at)}
                     hint="Enter 复制"
+                    badge={[
+                      item.entry.is_pinned ? '📌' : null,
+                      item.entry.subtype === 'sensitive' ? '⚠ 敏感' : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
                     selected={selected}
                     onSelect={() => selectByIndex(globalIndex)}
                     onActivate={() => onQuickPaste(item.entry)}
@@ -218,7 +232,11 @@ export function CommandPalette({ onQuickPaste, onOpenDetail, onRunCommand, onHid
             </Fragment>
           ))}
               {(!searchResults || searchResults.groups.length === 0) && (
-                <div className="history-status">无匹配结果</div>
+                <div className="history-status">
+                  {contentType
+                    ? `没有匹配的「${CONTENT_TYPE_LABELS[contentType]}」记录`
+                    : '无匹配结果'}
+                </div>
               )}
             </>
           )}

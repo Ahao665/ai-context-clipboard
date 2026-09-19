@@ -1,9 +1,9 @@
 import type { ClipboardEntry, PaletteComposeResult } from '@ai-clipboard/types';
+import type { ComposeFn } from '../lib/palette-compose';
 
-export type ComposeFn = (
-  query: string,
-  entries: ClipboardEntry[],
-) => PaletteComposeResult | Promise<PaletteComposeResult>;
+// Re-exported for convenience; the canonical definition lives next to the
+// composers so the controller and its callers cannot drift apart.
+export type { ComposeFn };
 
 export interface PaletteSearchCallbacks {
   onResult: (result: PaletteComposeResult) => void;

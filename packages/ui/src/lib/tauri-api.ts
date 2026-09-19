@@ -32,6 +32,11 @@ export async function deleteEntry(id: string): Promise<void> {
   await invoke('delete_entry', { id });
 }
 
+/** Flip an entry's pinned state. Returns the new state. */
+export async function togglePin(id: string): Promise<boolean> {
+  return invoke('toggle_pin', { id });
+}
+
 /** Soft-delete every non-deleted entry and purge the FTS index. Returns rows removed. */
 export async function clearHistory(): Promise<number> {
   return invoke('clear_history');

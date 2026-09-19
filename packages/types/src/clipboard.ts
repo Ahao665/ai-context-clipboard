@@ -23,6 +23,8 @@ export interface ClipboardEntry {
   source_app?: string;
   source_window?: string;
   is_deleted?: boolean;
+  /** Pinned entries sort above everything else in list and search results. */
+  is_pinned?: boolean;
   created_at: number;
   updated_at: number;
 }

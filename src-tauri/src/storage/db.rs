@@ -34,6 +34,7 @@ impl Database {
                 source_app      TEXT,
                 source_window   TEXT,
                 is_deleted      INTEGER DEFAULT 0,
+                is_pinned       INTEGER DEFAULT 0,
                 created_at      INTEGER NOT NULL,
                 updated_at      INTEGER NOT NULL
             );
@@ -76,7 +77,19 @@ impl Database {
                 ('ai.model', 'gpt-4o-mini', 0),
                 ('shortcut.panel', 'Alt+Space', 0),
                 ('privacy.ask_before_send', 'true', 0),
+                ('privacy.skip_sensitive', 'false', 0),
                 ('ui.max_history', '500', 0);",
+        )?;
+
+        // --- Column migrations for databases created by earlier versions -------
+        // `CREATE TABLE IF NOT EXISTS` above is a no-op on an existing table, so
+        // new columns have to be added explicitly. Guarded by PRAGMA so re-running
+        // is safe (SQLite has no `ADD COLUMN IF NOT EXISTS`).
+        Self::add_column_if_missing(&conn, "clipboard_entries", "is_pinned", "INTEGER DEFAULT 0")?;
+
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_entries_pinned
+                ON clipboard_entries(is_pinned DESC, created_at DESC);",
         )?;
 
         // FTS5 trigram index over clipboard content — MVP Chinese/English substring search.
@@ -112,6 +125,34 @@ impl Database {
                 "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('fts.backfilled', '1', ?1)",
                 rusqlite::params![chrono::Utc::now().timestamp_millis()],
             )?;
+        }
+        Ok(())
+    }
+
+    /// Add `column` to `table` when it does not already exist.
+    ///
+    /// SQLite has no `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, and the column
+    /// name cannot be bound as a parameter, so it is checked via `PRAGMA
+    /// table_info` first. Both identifiers are crate-internal constants, never
+    /// user input, so the string interpolation is safe.
+    fn add_column_if_missing(
+        conn: &Connection,
+        table: &str,
+        column: &str,
+        definition: &str,
+    ) -> Result<()> {
+        let mut stmt = conn.prepare(&format!("PRAGMA table_info({})", table))?;
+        let exists = stmt
+            .query_map([], |row| row.get::<_, String>(1))?
+            .filter_map(Result::ok)
+            .any(|name| name == column);
+        drop(stmt);
+
+        if !exists {
+            conn.execute_batch(&format!(
+                "ALTER TABLE {} ADD COLUMN {} {};",
+                table, column, definition
+            ))?;
         }
         Ok(())
     }

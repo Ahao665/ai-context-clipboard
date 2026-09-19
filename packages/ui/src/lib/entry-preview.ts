@@ -3,6 +3,21 @@ import type { ClipboardEntry } from '@ai-clipboard/types';
 /** Placeholder shown when an entry has neither content nor a preview. */
 export const EMPTY_PREVIEW = '(空)';
 
+/** Default number of characters stored as an entry's preview. */
+export const PREVIEW_LENGTH = 200;
+
+/**
+ * Build the preview stored alongside a captured entry.
+ *
+ * Newlines and runs of whitespace are collapsed so list rows stay single-line,
+ * and truncation happens on the flattened text — a raw `slice` could otherwise
+ * cut mid-newline and waste the preview budget on blank lines.
+ */
+export function buildPreview(text: string, max = PREVIEW_LENGTH): string {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  return flat.length > max ? flat.slice(0, max) : flat;
+}
+
 /**
  * A display-safe single-line preview for an entry.
  *

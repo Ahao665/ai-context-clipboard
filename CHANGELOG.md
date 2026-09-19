@@ -2,6 +2,57 @@
 
 All notable changes to AI Context Clipboard are documented in this file.
 
+## [0.3.0] - 2026-09-19
+
+### Features
+
+- **Content-type detection** — every copied snippet is now classified on save
+  (`link` / `code` / `json` / `email` / `text`), with a finer `subtype` (language
+  name, `path`, `color`, `sensitive`). Detection runs entirely locally via
+  heuristics — no network call, no model. The result drives the icons, the type
+  filter, and the sensitive-content guard.
+- **Sensitive-content guard** — snippets that look like credentials (private
+  keys, `password=`/`token=`/`api_key=` assignments, `sk-` / `ghp_` / `AKIA`
+  prefixes, JWTs, `mysql://` / `postgres://` connection strings, `Bearer` tokens)
+  are flagged `sensitive`. Enable `privacy.skip_sensitive` in settings to stop
+  them being written to the history at all.
+- **Pin / favourite** — pin any entry to keep it at the top of both the history
+  list and the palette. Pinned entries sort first (`is_pinned DESC, created_at
+  DESC`) in every query, including full-text search. Optimistic UI with rollback
+  on failure.
+- **Full-history search** — the command palette now queries the SQLite **FTS5
+  trigram** index instead of only the ~50 entries held in memory, so search
+  covers the entire stored history. Results are re-ranked locally so relevance
+  ordering is preserved, and the palette degrades to a local scan if the backend
+  call fails.
+- **Type filter** — filter chips in both the palette and the history list
+  (全部 / 链接 / 代码 / JSON / 邮箱 / 文本). Filtering is applied server-side
+  when searching, so it works across the whole history rather than the loaded
+  window.
+
+### Fixes
+
+- **`content_type` was always `'text'`** — `useClipboard` hardcoded the column,
+  which made the entire type/subtype system, the icon maps, and the DB index
+  dead code. Now driven by real detection.
+- **`searchEntries` was never called** — the FTS5 index existed and was
+  maintained, but no UI path used it; search silently only covered the loaded
+  entries. The palette now routes through it.
+- **Positional row mapping broke after migration** — `is_pinned` added via
+  `ALTER TABLE` lands *after* `updated_at`, whereas a freshly created table
+  places it before `created_at`. Queries now use an explicit `ENTRY_COLUMNS`
+  list instead of `SELECT *`, so old and new databases both map correctly
+  (covered by `test_migration_on_legacy_database_without_is_pinned`).
+- **`toggle_pin` on an unknown id** raised `QueryReturnedNoRows`; now returns
+  `false` so a stale UI row cannot crash the caller.
+
+### Tooling
+
+- **`scripts/run-tests.mjs`** — auto-discovers `packages/*/__tests__/*.test.ts`,
+  runs each in its own process, and aggregates the totals. `pnpm test` no longer
+  depends on a hand-maintained file list that silently skipped new suites.
+- **CI now runs the test suite**, not just `typecheck`.
+
 ## [0.2.0] - 2026-09-17
 
 ### Features

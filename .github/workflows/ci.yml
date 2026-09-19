@@ -5,8 +5,26 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v2
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '20' }
+        with: { node-version: '20', cache: pnpm }
       - run: pnpm install
       - run: pnpm typecheck
+      - name: TypeScript tests
+        run: pnpm test
+
+  rust:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Rust tests (storage layer)
+        working-directory: src-tauri
+        # Clipboard tests need a real desktop session, which CI runners do not
+        # provide; they block indefinitely. Scope to the storage module.
+        run: cargo test --lib storage::

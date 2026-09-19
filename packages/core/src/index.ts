@@ -8,3 +8,18 @@ export { executeExplain, buildExplainPrompt } from './actions/explain';
 export { fuzzyMatch } from './palette/fuzzy';
 export { PALETTE_COMMANDS } from './palette/commands';
 export { composePaletteResults } from './palette/search';
+export {
+  matchCommands,
+  orderEntries,
+  rankEntriesByQuery,
+  filterByType,
+  buildPaletteResult,
+} from './palette/search';
+export {
+  detectContent,
+  looksLikeCode,
+  looksSensitive,
+  CONTENT_TYPE_LABELS,
+  CONTENT_TYPE_ICONS,
+} from './detect/content-type';
+export type { Detection } from './detect/content-type';

@@ -29,15 +29,33 @@ cd src-tauri && cargo tauri dev
 # TypeScript 类型检查 (全部 packages)
 pnpm typecheck
 
-# Rust 测试 (需要 MSVC 环境)
-cd src-tauri && cargo test
+# TypeScript 测试 —— 自动发现 packages/*/__tests__/*.test.ts
+pnpm test
 
-# TypeScript 测试
-npx tsx packages/core/__tests__/ai-client.test.ts
-npx tsx packages/core/__tests__/action-engine.test.ts
-npx tsx packages/core/__tests__/event-bus.test.ts
-npx tsx packages/core/__tests__/privacy-flow.test.ts
+# 只跑文件名匹配的测试文件
+pnpm test content-type
+
+# Rust 测试
+cd src-tauri && cargo test --lib storage::
 ```
+
+### 关于 `cargo test` 的范围
+
+剪贴板用例（`clipboard::writer::tests::*`）需要**真实的桌面会话**才能访问系统剪贴板。
+在无 GUI 的后台会话中它们会**永久阻塞**（不是失败，是挂住），因此：
+
+- 本地日常开发用 `cargo test --lib storage::` 限定到存储层（34 个用例，秒级完成）。
+- 需要全量验证时，请在真实桌面终端里跑完整 `cargo test`。
+- CI 同样只跑 `storage::`，见 `.github/workflows/ci.yml`。
+
+### 关于 TypeScript 测试运行器
+
+`scripts/run-tests.mjs` 会扫描 `packages/*/__tests__/*.test.ts`，对每个文件用
+`node --import tsx` 起独立进程执行，再汇总结果与退出码。
+
+这样做的原因：以前 `package.json` 的 `test` 脚本硬编码了文件清单，新增测试文件
+（如 `content-type.test.ts`）会被静默跳过——测试看着是绿的，其实根本没跑。
+现在新增文件无需登记。
 
 ## 构建
 

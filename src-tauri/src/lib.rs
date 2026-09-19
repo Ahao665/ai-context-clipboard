@@ -58,6 +58,7 @@ pub fn run() {
             commands::storage::list_entries,
             commands::storage::search_entries,
             commands::storage::delete_entry,
+            commands::storage::toggle_pin,
             commands::storage::find_by_hash,
             commands::settings::get_setting,
             commands::settings::set_setting,
