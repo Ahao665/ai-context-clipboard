@@ -27,4 +27,7 @@ jobs:
         working-directory: src-tauri
         # Clipboard tests need a real desktop session, which CI runners do not
         # provide; they block indefinitely. Scope to the storage module.
-        run: cargo test --lib storage::
+        # NOTE: the value MUST be quoted — a trailing "::" in a plain scalar is
+        # parsed as a mapping key indicator and makes the whole file invalid.
+        run: "cargo test --lib storage::"
+

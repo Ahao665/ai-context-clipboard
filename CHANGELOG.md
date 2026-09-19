@@ -51,7 +51,37 @@ All notable changes to AI Context Clipboard are documented in this file.
 - **`scripts/run-tests.mjs`** — auto-discovers `packages/*/__tests__/*.test.ts`,
   runs each in its own process, and aggregates the totals. `pnpm test` no longer
   depends on a hand-maintained file list that silently skipped new suites.
+  A file that exits 0 without printing a `Results:` summary is now treated as a
+  failure, so a suite that silently does nothing can no longer inflate the count.
 - **CI now runs the test suite**, not just `typecheck`.
+
+### Fixed — test integrity
+
+- **94 assertions could not fail.** `action-engine.test.ts`,
+  `ai-client.test.ts` and `privacy-flow.test.ts` asserted with
+  `console.assert(...)`, which only logs on failure and returns normally — so the
+  test function completed and was counted as passed no matter what. Every call
+  now goes through a throwing `assert` helper. Verified by injecting a
+  deliberately false assertion into each suite and confirming it turns red
+  (`1 failed`, exit code 1) where it previously reported green.
+- **`event-bus.test.ts` could not fail either.** It used `console.assert`
+  throughout and then unconditionally printed `✅ all tests passed`. Rewritten
+  with real assertions covering delivery, unsubscribe, handler isolation,
+  `clear()`, `Set` dedupe and the `globalEventBus` singleton — 1 fake test
+  replaced by 16 real ones.
+- **CI workflow file was invalid.** `run: cargo test --lib storage::` is fine in
+  a shell but not in YAML: the trailing `::` in a plain scalar is parsed as a
+  mapping key indicator, so GitHub rejected the entire workflow. The symptom was
+  subtle — the run appeared with the file path as its name and produced zero
+  jobs. The value is now quoted, and all workflow files are validated as part of
+  the fix.
+
+### Docs
+
+- **README rewritten** for discoverability: banner, badge row, feature and
+  comparison tables, keyboard reference, architecture diagram, and a
+  contribution section. Adds `docs/assets/banner.svg` and
+  `docs/assets/workflow.svg`.
 
 ## [0.2.0] - 2026-09-17
 

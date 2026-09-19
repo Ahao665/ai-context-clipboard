@@ -239,9 +239,9 @@ cd src-tauri && cargo test --lib storage::
 pnpm exec tauri build --bundles "msi,nsis"
 ```
 
-**当前测试规模：179 个测试全绿** —— TypeScript 145 个（15 个文件）+ Rust 34 个。
+**当前测试规模：195 个测试全绿** —— TypeScript 161 个（15 个文件）+ Rust 34 个。
 
-测试运行器 `scripts/run-tests.mjs` 自动发现测试文件并逐进程执行，新增测试文件无需手动登记。
+测试运行器 `scripts/run-tests.mjs` 自动发现测试文件并逐进程执行，新增测试文件无需手动登记。若某个文件退出码为 0 却没有输出测试摘要，运行器会判定为失败 —— 避免"套件其实没跑，但显示全绿"。
 
 > ⚠️ `cargo test` 中剪贴板相关用例需要真实桌面会话。在无 GUI 的后台会话里它们会**永久阻塞**，请用 `cargo test --lib storage::` 限定模块。CI 也做了同样处理。
 

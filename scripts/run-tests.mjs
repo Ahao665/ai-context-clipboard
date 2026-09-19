@@ -87,7 +87,17 @@ for (const file of files) {
     totalFailed += Number(match[3]);
   }
 
-  if (code !== 0) {
+  // A file that exits 0 but never reports a summary is not a pass — it means the
+  // suite silently did nothing (e.g. an import failed and the assertions never
+  // ran). Treat it as a failure rather than letting it inflate the green count.
+  const reported = Boolean(match);
+  if (!reported) {
+    failedFiles++;
+    console.log('   ⚠ no "Results:" summary found — suite may not have run');
+    for (const l of lines.filter((l) => l.trim()).slice(-8)) {
+      console.log(`     ${l.trim()}`);
+    }
+  } else if (code !== 0) {
     failedFiles++;
     console.log(`   ⚠ exited with code ${code}`);
     for (const l of lines.filter((l) => l.trim()).slice(-8)) {

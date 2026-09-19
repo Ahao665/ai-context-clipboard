@@ -1,6 +1,19 @@
 import { AIClient } from '../src/ai/client';
 import type { AIProviderConfig, AIResponse } from '@ai-clipboard/types';
 
+/**
+ * Throwing assertion.
+ *
+ * `console.assert` only logs on failure and returns normally, so a test built on
+ * it can never fail — it reports green no matter what. Everything here must use
+ * this helper instead.
+ */
+function assert(condition: unknown, message: string): void {
+  console.assert(condition, message);
+  if (!condition) throw new Error(message);
+}
+
+
 const TEST_CONFIG: AIProviderConfig = {
   baseUrl: 'https://api.openai.com/v1',
   apiKey: 'sk-test-key',
@@ -44,16 +57,16 @@ function test_config() {
   const client = new AIClient(TEST_CONFIG);
 
   const config = client.getConfig();
-  console.assert(config.baseUrl === 'https://api.openai.com/v1', 'baseUrl should match');
-  console.assert(config.apiKey === 'sk-test-key', 'apiKey should match');
-  console.assert(config.model === 'gpt-4o-mini', 'model should match');
+  assert(config.baseUrl === 'https://api.openai.com/v1', 'baseUrl should match');
+  assert(config.apiKey === 'sk-test-key', 'apiKey should match');
+  assert(config.model === 'gpt-4o-mini', 'model should match');
 
   client.updateConfig({ ...TEST_CONFIG, model: 'gpt-4' });
-  console.assert(client.getConfig().model === 'gpt-4', 'model should be updated');
+  assert(client.getConfig().model === 'gpt-4', 'model should be updated');
 
   const config2 = client.getConfig();
   config2.model = 'modified';
-  console.assert(client.getConfig().model === 'gpt-4', 'config should be immutable');
+  assert(client.getConfig().model === 'gpt-4', 'config should be immutable');
 
   console.log('✅ test_config passed');
 }
@@ -75,11 +88,11 @@ async function test_request_format() {
   await client.chat([{ role: 'user', content: 'Hello' }]);
 
   const body = JSON.parse(capturedBody!);
-  console.assert(body.model === 'gpt-4o-mini', 'request model should match');
-  console.assert(body.messages[0].content === 'Hello', 'request messages should match');
-  console.assert(body.stream === false, 'non-streaming should be false');
-  console.assert(body.max_tokens === 2048, 'default max_tokens should be 2048');
-  console.assert(body.temperature === 0.7, 'default temperature should be 0.7');
+  assert(body.model === 'gpt-4o-mini', 'request model should match');
+  assert(body.messages[0].content === 'Hello', 'request messages should match');
+  assert(body.stream === false, 'non-streaming should be false');
+  assert(body.max_tokens === 2048, 'default max_tokens should be 2048');
+  assert(body.temperature === 0.7, 'default temperature should be 0.7');
 
   console.log('✅ test_request_format passed');
 }
@@ -100,8 +113,8 @@ async function test_api_url_and_auth() {
   const client = new AIClient(TEST_CONFIG);
   await client.chat([{ role: 'user', content: 'Hello' }]);
 
-  console.assert(capturedUrl === 'https://api.openai.com/v1/chat/completions', 'URL should be correct');
-  console.assert(capturedAuth === 'Bearer sk-test-key', 'auth header should be correct');
+  assert(capturedUrl === 'https://api.openai.com/v1/chat/completions', 'URL should be correct');
+  assert(capturedAuth === 'Bearer sk-test-key', 'auth header should be correct');
 
   console.log('✅ test_api_url_and_auth passed');
 }
@@ -120,9 +133,9 @@ async function test_successful_response() {
   const client = new AIClient(TEST_CONFIG);
   const result = await client.chat([{ role: 'user', content: 'Hi' }]);
 
-  console.assert(result.id === 'chatcmpl-123', 'response id should match');
-  console.assert(result.choices[0].message.content === 'Hello!', 'response content should match');
-  console.assert(result.usage!.total_tokens === 15, 'token usage should match');
+  assert(result.id === 'chatcmpl-123', 'response id should match');
+  assert(result.choices[0].message.content === 'Hello!', 'response content should match');
+  assert(result.usage!.total_tokens === 15, 'token usage should match');
 
   console.log('✅ test_successful_response passed');
 }
@@ -137,13 +150,13 @@ async function test_401_error() {
   const client = new AIClient(TEST_CONFIG);
   try {
     await client.chat([{ role: 'user', content: 'Hi' }]);
-    console.assert(false, 'should have thrown');
+    assert(false, 'should have thrown');
   } catch (err: unknown) {
     const aiErr = err as { status: number; message: string; code: string };
-    console.assert(aiErr.status === 401, 'status should be 401');
+    assert(aiErr.status === 401, 'status should be 401');
     // Should use user-friendly Chinese message, not raw API error
-    console.assert(aiErr.message.includes('API Key'), 'message should be user-friendly');
-    console.assert(aiErr.code === 'invalid_api_key', 'code should match');
+    assert(aiErr.message.includes('API Key'), 'message should be user-friendly');
+    assert(aiErr.code === 'invalid_api_key', 'code should match');
   }
 
   console.log('✅ test_401_error passed');
@@ -157,11 +170,11 @@ async function test_403_error() {
   const client = new AIClient(TEST_CONFIG);
   try {
     await client.chat([{ role: 'user', content: 'Hi' }]);
-    console.assert(false, 'should have thrown');
+    assert(false, 'should have thrown');
   } catch (err: unknown) {
     const aiErr = err as { status: number; message: string };
-    console.assert(aiErr.status === 403, 'status should be 403');
-    console.assert(aiErr.message.includes('拒绝'), '403 message should be user-friendly');
+    assert(aiErr.status === 403, 'status should be 403');
+    assert(aiErr.message.includes('拒绝'), '403 message should be user-friendly');
   }
 
   console.log('✅ test_403_error passed');
@@ -175,11 +188,11 @@ async function test_429_rate_limit() {
   const client = new AIClient(TEST_CONFIG);
   try {
     await client.chat([{ role: 'user', content: 'Hi' }]);
-    console.assert(false, 'should have thrown');
+    assert(false, 'should have thrown');
   } catch (err: unknown) {
     const aiErr = err as { status: number; message: string; type: string };
-    console.assert(aiErr.status === 429, 'status should be 429');
-    console.assert(aiErr.message.includes('频繁'), '429 message should mention retry');
+    assert(aiErr.status === 429, 'status should be 429');
+    assert(aiErr.message.includes('频繁'), '429 message should mention retry');
   }
 
   console.log('✅ test_429_rate_limit passed');
@@ -193,11 +206,11 @@ async function test_500_error() {
   const client = new AIClient(TEST_CONFIG);
   try {
     await client.chat([{ role: 'user', content: 'Hi' }]);
-    console.assert(false, 'should have thrown');
+    assert(false, 'should have thrown');
   } catch (err: unknown) {
     const aiErr = err as { status: number; message: string };
-    console.assert(aiErr.status === 500, 'status should be 500');
-    console.assert(aiErr.message.includes('不可用'), '500 message should be user-friendly');
+    assert(aiErr.status === 500, 'status should be 500');
+    assert(aiErr.message.includes('不可用'), '500 message should be user-friendly');
   }
 
   console.log('✅ test_500_error passed');
@@ -209,12 +222,12 @@ async function test_network_error() {
   const client = new AIClient(TEST_CONFIG);
   try {
     await client.chat([{ role: 'user', content: 'Hi' }]);
-    console.assert(false, 'should have thrown');
+    assert(false, 'should have thrown');
   } catch (err: unknown) {
     const aiErr = err as { status: number; type: string; message: string };
-    console.assert(aiErr.status === 0, 'status should be 0 for network error');
-    console.assert(aiErr.type === 'network_error', 'type should be network_error');
-    console.assert(aiErr.message.includes('网络'), 'network error should be user-friendly');
+    assert(aiErr.status === 0, 'status should be 0 for network error');
+    assert(aiErr.type === 'network_error', 'type should be network_error');
+    assert(aiErr.message.includes('网络'), 'network error should be user-friendly');
   }
 
   console.log('✅ test_network_error passed');
@@ -226,11 +239,11 @@ async function test_empty_response_body() {
   const client = new AIClient(TEST_CONFIG);
   try {
     await client.chat([{ role: 'user', content: 'Hi' }]);
-    console.assert(false, 'should have thrown');
+    assert(false, 'should have thrown');
   } catch (err: unknown) {
     const aiErr = err as { type: string; message: string };
-    console.assert(aiErr.type === 'empty_response', 'should be empty_response type');
-    console.assert(aiErr.message.includes('空响应'), 'should mention empty response');
+    assert(aiErr.type === 'empty_response', 'should be empty_response type');
+    assert(aiErr.message.includes('空响应'), 'should mention empty response');
   }
 
   console.log('✅ test_empty_response_body passed');
@@ -244,11 +257,11 @@ async function test_empty_choices() {
   const client = new AIClient(TEST_CONFIG);
   try {
     await client.chat([{ role: 'user', content: 'Hi' }]);
-    console.assert(false, 'should have thrown');
+    assert(false, 'should have thrown');
   } catch (err: unknown) {
     const aiErr = err as { type: string; message: string };
-    console.assert(aiErr.type === 'empty_choices', 'should be empty_choices type');
-    console.assert(aiErr.message.includes('空结果'), 'should mention empty result');
+    assert(aiErr.type === 'empty_choices', 'should be empty_choices type');
+    assert(aiErr.message.includes('空结果'), 'should mention empty result');
   }
 
   console.log('✅ test_empty_choices passed');
@@ -261,11 +274,11 @@ async function test_content_length_limit() {
   const client = new AIClient(TEST_CONFIG);
   try {
     await client.chat([{ role: 'user', content: longContent }]);
-    console.assert(false, 'should have thrown');
+    assert(false, 'should have thrown');
   } catch (err: unknown) {
     const aiErr = err as { type: string; status: number };
-    console.assert(aiErr.type === 'validation_error', 'should be validation_error');
-    console.assert(aiErr.status === 0, 'status should be 0');
+    assert(aiErr.type === 'validation_error', 'should be validation_error');
+    assert(aiErr.status === 0, 'status should be 0');
   }
 
   console.log('✅ test_content_length_limit passed');
@@ -283,11 +296,11 @@ async function test_api_key_sanitization() {
   const client = new AIClient(TEST_CONFIG);
   try {
     await client.chat([{ role: 'user', content: 'Hi' }]);
-    console.assert(false, 'should have thrown');
+    assert(false, 'should have thrown');
   } catch (err: unknown) {
     const aiErr = err as { message: string };
     // The sanitized message should use the user-friendly mapping, not expose the raw API key
-    console.assert(aiErr.message.includes('API Key'), 'should use user-friendly message');
+    assert(aiErr.message.includes('API Key'), 'should use user-friendly message');
   }
 
   console.log('✅ test_api_key_sanitization passed');
@@ -309,7 +322,7 @@ async function test_custom_base_url() {
   });
 
   await client.chat([{ role: 'user', content: 'Hello' }]);
-  console.assert(capturedUrl === 'https://api.deepseek.com/v1/chat/completions', 'custom baseUrl should work');
+  assert(capturedUrl === 'https://api.deepseek.com/v1/chat/completions', 'custom baseUrl should work');
 
   console.log('✅ test_custom_base_url passed');
 }

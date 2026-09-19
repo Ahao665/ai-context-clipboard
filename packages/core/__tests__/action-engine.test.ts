@@ -4,6 +4,19 @@ import {
   executeSummarize,
   buildSummarizePrompt,
 } from '../src/actions/summarize';
+
+/**
+ * Throwing assertion.
+ *
+ * `console.assert` only logs on failure and returns normally, so a test built on
+ * it can never fail — it reports green no matter what. Everything here must use
+ * this helper instead.
+ */
+function assert(condition: unknown, message: string): void {
+  console.assert(condition, message);
+  if (!condition) throw new Error(message);
+}
+
 import {
   executeTranslate,
   buildTranslatePrompt,
@@ -58,38 +71,38 @@ function errorClient(): AIClient {
 
 function test_summarize_prompt() {
   const p = buildSummarizePrompt('hello');
-  console.assert(p.includes('总结'), 'summarize: should contain 总结');
-  console.assert(p.includes('hello'), 'summarize: should contain input');
-  console.assert(p.includes('分点列出'), 'summarize: should ask for bullet points');
+  assert(p.includes('总结'), 'summarize: should contain 总结');
+  assert(p.includes('hello'), 'summarize: should contain input');
+  assert(p.includes('分点列出'), 'summarize: should ask for bullet points');
   console.log('✅ test_summarize_prompt passed');
 }
 
 function test_translate_prompt() {
   const p = buildTranslatePrompt('hello');
-  console.assert(p.includes('翻译'), 'translate: should contain 翻译');
-  console.assert(p.includes('hello'), 'translate: should contain input');
+  assert(p.includes('翻译'), 'translate: should contain 翻译');
+  assert(p.includes('hello'), 'translate: should contain input');
   console.log('✅ test_translate_prompt passed');
 }
 
 function test_rewrite_prompt() {
   const p = buildRewritePrompt('hello');
-  console.assert(p.includes('润色') || p.includes('改进'), 'rewrite: should contain 改进');
-  console.assert(p.includes('hello'), 'rewrite: should contain input');
+  assert(p.includes('润色') || p.includes('改进'), 'rewrite: should contain 改进');
+  assert(p.includes('hello'), 'rewrite: should contain input');
   console.log('✅ test_rewrite_prompt passed');
 }
 
 function test_reply_prompt() {
   const p = buildReplyPrompt('hello');
-  console.assert(p.includes('回复'), 'reply: should contain 回复');
-  console.assert(p.includes('hello'), 'reply: should contain input');
+  assert(p.includes('回复'), 'reply: should contain 回复');
+  assert(p.includes('hello'), 'reply: should contain input');
   console.log('✅ test_reply_prompt passed');
 }
 
 function test_explain_prompt() {
   const p = buildExplainPrompt('hello');
-  console.assert(p.includes('解释'), 'explain: should contain 解释');
-  console.assert(p.includes('hello'), 'explain: should contain input');
-  console.assert(p.includes('简单'), 'explain: should ask for simple language');
+  assert(p.includes('解释'), 'explain: should contain 解释');
+  assert(p.includes('hello'), 'explain: should contain input');
+  assert(p.includes('简单'), 'explain: should ask for simple language');
   console.log('✅ test_explain_prompt passed');
 }
 
@@ -97,58 +110,58 @@ function test_explain_prompt() {
 
 async function test_summarize_success() {
   const result = await executeSummarize(testClient(), 'some text');
-  console.assert(result.success === true, 'summarize should succeed');
-  console.assert(result.actionId === 'text.summarize', 'actionId should match');
+  assert(result.success === true, 'summarize should succeed');
+  assert(result.actionId === 'text.summarize', 'actionId should match');
   console.log('✅ test_summarize_success passed');
 }
 
 async function test_translate_success() {
   const result = await executeTranslate(testClient(), 'some text');
-  console.assert(result.success === true, 'translate should succeed');
-  console.assert(result.actionId === 'text.translate', 'actionId should match');
+  assert(result.success === true, 'translate should succeed');
+  assert(result.actionId === 'text.translate', 'actionId should match');
   console.log('✅ test_translate_success passed');
 }
 
 async function test_rewrite_success() {
   const result = await executeRewrite(testClient(), 'some text');
-  console.assert(result.success === true, 'rewrite should succeed');
-  console.assert(result.actionId === 'text.polish', 'actionId should match');
+  assert(result.success === true, 'rewrite should succeed');
+  assert(result.actionId === 'text.polish', 'actionId should match');
   console.log('✅ test_rewrite_success passed');
 }
 
 async function test_reply_success() {
   const result = await executeReply(testClient(), 'some text');
-  console.assert(result.success === true, 'reply should succeed');
-  console.assert(result.actionId === 'text.reply', 'actionId should match');
+  assert(result.success === true, 'reply should succeed');
+  assert(result.actionId === 'text.reply', 'actionId should match');
   console.log('✅ test_reply_success passed');
 }
 
 async function test_explain_success() {
   const result = await executeExplain(testClient(), 'some text');
-  console.assert(result.success === true, 'explain should succeed');
-  console.assert(result.actionId === 'text.explain', 'actionId should match');
+  assert(result.success === true, 'explain should succeed');
+  assert(result.actionId === 'text.explain', 'actionId should match');
   console.log('✅ test_explain_success passed');
 }
 
 async function test_empty_content() {
   const r1 = await executeSummarize(testClient(), '');
-  console.assert(r1.success === false, 'empty summarize should fail');
+  assert(r1.success === false, 'empty summarize should fail');
   const r2 = await executeTranslate(testClient(), '   ');
-  console.assert(r2.success === false, 'whitespace translate should fail');
+  assert(r2.success === false, 'whitespace translate should fail');
   const r3 = await executeRewrite(testClient(), '');
-  console.assert(r3.success === false, 'empty rewrite should fail');
+  assert(r3.success === false, 'empty rewrite should fail');
   const r4 = await executeReply(testClient(), '');
-  console.assert(r4.success === false, 'empty reply should fail');
+  assert(r4.success === false, 'empty reply should fail');
   const r5 = await executeExplain(testClient(), '');
-  console.assert(r5.success === false, 'empty explain should fail');
+  assert(r5.success === false, 'empty explain should fail');
   console.log('✅ test_empty_content passed');
 }
 
 async function test_api_error() {
   const result = await executeSummarize(errorClient(), 'text');
-  console.assert(result.success === false, 'should fail on API error');
-  console.assert(result.error !== undefined, 'should have error message');
-  console.assert(typeof result.error === 'string', 'error should be a string');
+  assert(result.success === false, 'should fail on API error');
+  assert(result.error !== undefined, 'should have error message');
+  assert(typeof result.error === 'string', 'error should be a string');
   console.log('✅ test_api_error passed');
 }
 
@@ -169,8 +182,8 @@ async function test_empty_api_result() {
   });
 
   const result = await executeSummarize(client, 'some text');
-  console.assert(result.success === false, 'empty API result should fail');
-  console.assert(result.error!.includes('未返回'), 'should mention empty result');
+  assert(result.success === false, 'empty API result should fail');
+  assert(result.error!.includes('未返回'), 'should mention empty result');
   console.log('✅ test_empty_api_result passed');
 }
 
@@ -182,8 +195,8 @@ async function test_content_too_long() {
   });
 
   const result = await executeSummarize(client, longContent);
-  console.assert(result.success === false, 'too-long content should fail');
-  console.assert(result.error!.includes('过长'), 'should mention length limit');
+  assert(result.success === false, 'too-long content should fail');
+  assert(result.error!.includes('过长'), 'should mention length limit');
   console.log('✅ test_content_too_long passed');
 }
 
@@ -204,7 +217,7 @@ async function test_content_just_at_limit() {
   });
 
   const result = await executeSummarize(client, content);
-  console.assert(result.error === undefined || result.success === true, 'content at limit should be allowed');
+  assert(result.error === undefined || result.success === true, 'content at limit should be allowed');
   console.log('✅ test_content_just_at_limit passed');
 }
 
