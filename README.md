@@ -1,87 +1,57 @@
-<div align="center">
-
 <img src="docs/assets/banner.svg" alt="AI Context Clipboard" width="100%">
 
 [![CI](https://github.com/Ahao665/ai-context-clipboard/actions/workflows/ci.yml/badge.svg)](https://github.com/Ahao665/ai-context-clipboard/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Ahao665/ai-context-clipboard?include_prereleases&color=5b8cff)](https://github.com/Ahao665/ai-context-clipboard/releases)
+[![Release](https://img.shields.io/github/v/release/Ahao665/ai-context-clipboard)](https://github.com/Ahao665/ai-context-clipboard/releases)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4.svg)](#-系统要求)
-[![Tauri](https://img.shields.io/badge/Tauri-2.x-24c8db.svg)](https://tauri.app)
-[![Rust](https://img.shields.io/badge/Rust-1.75%2B-dea584.svg)](https://www.rust-lang.org)
 
-**不是又一个剪贴板管理器，而是你的本地 AI 助手入口。**
+Windows 上的剪贴板历史工具，带 AI 处理。`Alt+Space` 呼出面板，搜索历史，选中内容直接跑总结 / 翻译 / 润色 / 回复 / 解释。
 
-复制任意内容 → `Alt+Space` 呼出 → 一键总结 / 翻译 / 润色 / 回复 / 解释。
-Rust + Tauri 构建，安装包约 3 MB，数据全程留在本机。
+Tauri 2 + Rust 写后端，NSIS 安装包 3.2 MB，历史存在本地 SQLite 里。不配 API Key 也能当普通剪贴板历史用。
 
-[功能特性](#-功能特性) · [安装](#-安装) · [快速开始](#-快速开始) · [快捷键](#️-快捷键) · [隐私](#-隐私与安全) · [架构](#️-项目架构) · [开发](#-开发)
+## 为什么写这个
 
-</div>
+Windows 自带剪贴板只能存 25 条，中文搜不了，也没有 AI。Ditto 和 CopyQ 的检索能力其实很强，但复制完想干点什么，还是得自己来。
 
----
+我自己的流程一般是：复制一段报错日志 → 切到浏览器 → 打开某个 AI 网站 → 粘贴 → 敲提示词 → 等 → 复制回来。这个工具就是把中间那几步省掉。
 
-## 为什么做这个
+有三件事是一开始就定下来的，后来也没改过：数据不离开本机；调 AI 之前先把要发出去的内容给我看；不配 Key 也要能用。
 
-Windows 自带剪贴板只能存 25 条、搜不了中文、更没有 AI。市面上的剪贴板管理器（Ditto、CopyQ）检索能力很强，但都把"复制之后要干什么"留给你自己。
+## 功能
 
-而日常最真实的场景是：**你刚复制了一段报错日志 / 一段英文文档 / 一封要回复的邮件，然后要切到浏览器、打开某个 AI 网站、粘贴、敲提示词、等待、再复制回来。**
+**搜索**。全历史走 SQLite FTS5 的 trigram 索引，中英文子串都能命中。不是只搜当前加载的那几十条 —— 之前有个版本就是这样，几百条之后基本等于搜不到。
 
-这个项目把这条链路压成两步：`Alt+Space` → 点一下。
+**内容识别**。复制后自动判断是链接、代码、JSON、邮箱还是普通文本，代码会再细分语言。纯本地正则启发式，不发网络请求。
 
-同时它坚持三条底线：**数据不出本机**、**AI 调用前必须让你看到发送内容**、**不配 API Key 也能当纯本地剪贴板历史用**。
+**敏感内容保护**。识别私钥、`password=` / `api_key=` 这类赋值、`sk-` / `ghp_` / `AKIA` 前缀、JWT、数据库连接串。识别到的会打标记；在设置里打开「跳过敏感内容」后，这类内容根本不写进数据库。
 
-## ✨ 功能特性
+**置顶**。常用片段钉在最上面，列表和搜索用同一套排序。
 
-| 能力 | 说明 |
-|------|------|
-| 🎯 **智能剪贴板监听** | 300 ms 轮询 Win32 剪贴板，SHA256 指纹去重，重复内容自动合并 |
-| 🔍 **全历史全文搜索** | SQLite **FTS5 trigram** 索引，覆盖**整库**而非当前窗口；中英文子串均毫秒级命中 |
-| 🏷️ **内容类型自动识别** | 复制即分类为 链接 / 代码 / JSON / 邮箱 / 文本，并细分语言、路径、颜色等子类型 —— 纯本地启发式，零网络调用 |
-| 🔒 **敏感内容保护** | 识别私钥、`password=` / `token=` / `api_key=` 赋值、`sk-` / `ghp_` / `AKIA` 前缀、JWT、数据库连接串等；可开启「跳过敏感内容」使其根本不落库 |
-| 📌 **置顶收藏** | 常用片段置顶后永远排最前，列表与搜索排序一致，乐观更新失败自动回滚 |
-| 🧩 **类型筛选** | 链接 / 代码 / JSON / 邮箱 / 文本 一键筛选；筛选在**后端执行**，因此同样作用于全量历史 |
-| 🤖 **5 种 AI 操作** | 总结、翻译、润色、回复、解释 —— 开箱即用的提示词工程，无需自己写 prompt |
-| 🔌 **任意 OpenAI 兼容 API** | DeepSeek / OpenAI / 通义千问 / Kimi 一键预设，也可填自定义 Base URL |
-| ⚡ **全局快捷键** | `Alt+Space` 在任意应用上层呼出面板，置顶浮窗不抢焦点 |
-| 🛡️ **隐私确认** | 首次调用 AI 前弹窗展示**即将发送的完整内容**，可「不再提示」，也可随时在设置里恢复 |
-| 🪶 **轻量** | Tauri 2 后端，安装包约 3 MB，常驻内存远低于 Electron 方案 |
-| 🗃️ **可维护的历史** | 历史条数上限真实生效、软删除 + 物理清理（`VACUUM`）、一键清空 |
+**类型筛选**。按链接 / 代码 / JSON / 邮箱 / 文本过滤。筛选在后端执行，所以是过滤全部历史而不是当前窗口。
 
-### 它和其他剪贴板工具的区别
+**AI 操作**。总结、翻译、润色、回复、解释。提示词都在 `packages/core/src/actions/` 下，想改直接改，不用碰别的地方。
 
-| | Windows 剪贴板 | Ditto / CopyQ | **AI Context Clipboard** |
-|---|---|---|---|
-| 历史条数 | 25 | 无上限 | 无上限（可配置） |
-| 中文搜索 | ❌ | 一般 | ✅ FTS5 trigram 子串匹配 |
-| 内容类型识别 | ❌ | ❌ | ✅ 链接 / 代码 / JSON / 邮箱 / 文本 |
-| 敏感信息保护 | ❌ | ❌ | ✅ 识别并可跳过落库 |
-| 内置 AI 处理 | ❌ | ❌ | ✅ 5 种操作 + 任意兼容 API |
-| 数据本地 | ✅ | ✅ | ✅ |
+**历史维护**。条数上限会真实生效（不是写进配置就完事），支持软删除 + 物理清理（`VACUUM`），可以一键清空。
 
-## 🖥️ 系统要求
+## 和其他工具的关系
 
-- **Windows 10 / 11 (x64)**
-- [WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)（Windows 10 1803+ 已内置，无需单独安装）
+定位不一样。Ditto、CopyQ 是通用剪贴板管理器，能做的事比这个多得多，如果你只想要一个剪贴板历史工具，直接用它们就行。这个项目的重点在「复制完之后的下一步」。
 
-> 目前仅支持 Windows。剪贴板读写直接调用 Win32 API（`CF_UNICODETEXT`），这也是它足够轻的原因。
+中文搜索是另一个差异点。FTS5 的 trigram tokenizer 可以直接做子串匹配，不需要额外分词，所以中英混排的内容也能搜。
 
-## 📥 安装
+## 安装
 
-### 方式一：下载安装包（推荐）
+Windows 10 / 11 (x64)。需要 WebView2，Win10 1803 以上已经内置了。
 
-前往 [**Releases**](../../releases/latest) 下载最新安装包：
+从 [Releases](../../releases/latest) 下载：
 
-| 格式 | 文件 | 体积 | 说明 |
-|------|------|------|------|
-| NSIS | `AI Context Clipboard_0.3.0_x64-setup.exe` | 约 3.2 MB | 体积最小，安装向导友好（推荐） |
-| MSI | `AI Context Clipboard_0.3.0_x64_en-US.msi` | 约 5.4 MB | 适合企业分发 / 组策略部署 |
+| 文件 | 体积 |
+|---|---|
+| `AI.Context.Clipboard_0.3.0_x64-setup.exe`（NSIS） | 3.2 MB |
+| `AI.Context.Clipboard_0.3.0_x64_en-US.msi` | 4.5 MB |
 
-```bash
-# 或命令行安装
-msiexec /i "AI.Context.Clipboard_0.3.0_x64_en-US.msi"
-```
+没做代码签名，首次安装 Windows 可能弹 SmartScreen，点「仍要运行」即可。
 
-### 方式二：从源码构建
+从源码构建：
 
 ```bash
 git clone https://github.com/Ahao665/ai-context-clipboard.git
@@ -90,96 +60,58 @@ pnpm install
 pnpm exec tauri build --bundles "msi,nsis"
 ```
 
-产物位于 `src-tauri/target/release/bundle/`。
+需要 Rust（MSVC 工具链）、Node.js 20+、pnpm、VS 2022 Build Tools。产物在 `src-tauri/target/release/bundle/`。
 
-> 构建需要 Rust（MSVC 工具链）+ Node.js 20+ + pnpm + VS 2022 Build Tools。
-> 如果你在 **Git Bash** 里构建遇到 `link: missing operand` 或 `LNK1181`，请先看 [docs/BUILD-WINDOWS.md](docs/BUILD-WINDOWS.md) —— 那是 Git Bash 自带的 `link.exe` 遮蔽了 MSVC 链接器导致的，文档里有完整修复步骤。
+如果你在 Git Bash 里构建碰到 `link: missing operand` 或者 `LNK1181`，那是 Git Bash 自带的 `link.exe` 遮蔽了 MSVC 的链接器，[docs/BUILD-WINDOWS.md](docs/BUILD-WINDOWS.md) 里有完整的处理步骤。
 
-## 🚀 快速开始
+## 用法
 
-### 1. 让应用跑起来
+装完启动就开始记录了，不需要任何配置。要跑 AI 的话按 `Alt+Space`，点右上角齿轮，选服务商预设、填 API Key。
 
-安装后启动，应用常驻后台并开始监听剪贴板。**这一步不需要任何配置，也不需要 API Key** —— 它已经可以当纯本地剪贴板历史用了。
-
-### 2. 配置 AI（可选）
-
-1. `Alt+Space` 打开面板
-2. 点右上角 **⚙️**
-3. 选择服务商预设，填入 API Key，保存
-
-设置面板里还能：
-
-- 开关「每次调用前询问」隐私确认
-- 开启「跳过敏感内容」（含密钥的复制内容不写入历史）
-- 查看当前历史条数、一键清空历史
-- 查看全局快捷键
-
-### 3. 使用
-
-1. `Ctrl+C` 复制任意内容
-2. `Alt+Space` 呼出面板
-3. 输入关键词搜索，或用类型筛选缩小范围
-4. `Enter` 把选中项复制回剪贴板；`Shift+Enter` 查看详情
-5. 在详情页点 AI 操作；或在面板里直接输入 `总结` / `翻译` 等命令并回车
-
-| AI 操作 | 说明 |
-|---------|------|
-| 📝 **总结** | 提取内容要点，分点列出 |
-| 🌐 **翻译** | 翻译为中文，保留原有格式 |
-| ✨ **润色** | 改进表达，更清晰专业 |
-| 💬 **回复** | 根据内容生成自然回复 |
-| 🔍 **解释** | 用简单语言解释复杂内容 |
-
-## ⌨️ 快捷键
+设置里可以开关「每次调用前询问」、打开「跳过敏感内容」、看当前历史条数、清空历史。
 
 | 按键 | 行为 |
-|------|------|
-| `Alt+Space` | 全局呼出 / 收起面板 |
-| `↑` `↓` | 上下移动选择 |
-| `Enter` | 复制选中项并关闭面板；若选中命令则执行该 AI 操作 |
-| `Shift+Enter` | 打开选中项详情 |
-| `Esc` | 有输入时清空输入；输入为空时关闭面板 |
+|---|---|
+| `Alt+Space` | 全局呼出 / 收起 |
+| `↑` `↓` | 移动选择 |
+| `Enter` | 复制选中项并关闭；选中命令时执行该 AI 操作 |
+| `Shift+Enter` | 打开详情 |
+| `Esc` | 有输入时清空输入，输入为空时关闭 |
 
-> 面板做了 **IME 保护**：中文输入法组词期间（`isComposing`）所有按键都会被抑制，不会出现"打字打到一半把面板关了"的情况。
+输入法组词期间（`isComposing`）所有按键都会被忽略，不会出现打字打到一半把面板关掉的情况。
 
-## 🔌 支持的 AI 服务
+## 支持的 AI 服务
 
 兼容 OpenAI Chat Completions 协议：
 
-| 服务 | Base URL | 推荐模型 |
-|------|----------|----------|
-| [DeepSeek](https://platform.deepseek.com) | `https://api.deepseek.com/v1` | `deepseek-chat` |
-| [OpenAI](https://platform.openai.com) | `https://api.openai.com/v1` | `gpt-4o-mini` |
-| [通义千问](https://help.aliyun.com/zh/model-studio) | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-plus` |
-| [Kimi](https://platform.moonshot.cn) | `https://api.moonshot.cn/v1` | `moonshot-v1-8k` |
-| 任意兼容服务 | 自定义 URL | 自定义模型 |
+| 服务 | Base URL | 模型示例 |
+|---|---|---|
+| DeepSeek | `https://api.deepseek.com/v1` | `deepseek-chat` |
+| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
+| 通义千问 | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-plus` |
+| Kimi | `https://api.moonshot.cn/v1` | `moonshot-v1-8k` |
 
-本地模型（Ollama / vLLM / LM Studio）只要暴露 OpenAI 兼容端点，同样可以直接填进去。
+Ollama、vLLM、LM Studio 之类只要暴露 OpenAI 兼容端点，也能直接填进去。
 
-## 🔒 隐私与安全
+## 隐私
 
-这是本项目的核心设计约束，不是事后补的说明：
+- 监听、识别、存储、搜索都在本机完成，不发网络请求。
+- 只有你主动点 AI 操作时才会请求，而且发送前会把完整内容显示出来让你确认。
+- API Key 只存在本地设置表里，不写日志，`.gitignore` 已经排除了 `.env*`。
+- 数据库是应用数据目录下的单个 SQLite 文件，想删直接删。
 
-- **默认离线**：监听、分类、存储、检索全部在本机完成，全程零网络请求。
-- **不自动上传**：只有你主动点击 AI 操作时才会发起请求。
-- **调用前可见**：每次 AI 调用前弹窗展示即将发送的完整内容。
-- **敏感内容可拦截**：识别到密钥类内容时打上 `⚠ 敏感` 标记；开启「跳过敏感内容」后这类内容根本不会写入数据库。
-- **本地存储**：SQLite 单文件，位于应用数据目录，随时可删。
-- **密钥不留痕**：API Key 只存在本地设置表，不写日志、不进版本库（`.gitignore` 已覆盖 `.env*`）。
-
-## 🏗️ 项目架构
+## 项目结构
 
 <img src="docs/assets/workflow.svg" alt="工作流程" width="100%">
 
 ```
 ai-context-clipboard/
 ├── packages/
-│   ├── types/                      # 共享 TypeScript 类型（单一事实来源）
-│   ├── core/                       # 纯业务逻辑 —— 零框架依赖，可独立测试
+│   ├── types/                      # 共享 TypeScript 类型
+│   ├── core/                       # 纯业务逻辑，零框架依赖
 │   │   ├── ai/client.ts            # OpenAI Compatible 客户端
-│   │   ├── actions/                # 提示词引擎
-│   │   │   └── summarize.ts  translate.ts  rewrite.ts  reply.ts  explain.ts
-│   │   ├── detect/content-type.ts  # 内容类型 / 敏感信息识别
+│   │   ├── actions/                # 提示词：summarize / translate / rewrite / reply / explain
+│   │   ├── detect/content-type.ts  # 内容类型与敏感信息识别
 │   │   ├── palette/                # 搜索排序、模糊匹配、命令定义
 │   │   └── event-bus.ts
 │   └── ui/                         # React 界面
@@ -195,87 +127,50 @@ ai-context-clipboard/
 │   │   └── maintenance.rs          # 计数、清理、容量控制、VACUUM
 │   ├── commands/                   # Tauri IPC 命令
 │   └── shortcut/manager.rs         # 全局快捷键
-└── docs/                           # 构建与开发文档
+└── docs/
 ```
 
-### 分层原则
+分层上有个约定：`packages/core` 不依赖任何框架 —— 没有 React、没有 Tauri、没有 Rust。提示词构建、类型识别、搜索排序都在这里，所以可以直接用 node 脚本跑测试，不用起整个应用。`src-tauri` 只负责系统能力（剪贴板、数据库、快捷键、窗口），业务规则不写在 Rust 里。
 
-- **`core` 不依赖任何框架** —— 没有 React、没有 Tauri、没有 Rust。提示词构建、类型识别、搜索排序逻辑都在这里，因此可以用普通 Node 脚本直接跑单测。
-- **`src-tauri` 只做系统能力** —— 剪贴板、数据库、快捷键、窗口。业务规则不写在 Rust 里。
-- **`ui` 只做编排和渲染** —— 通过注入的函数（如 `SearchFn`）调用后端，模块本身不 import Tauri，保证可测。
+技术栈：Tauri 2 / React 18 + TypeScript + Vite / Zustand / rusqlite + FTS5 / Win32 API（`CF_UNICODETEXT`）/ tauri-plugin-global-shortcut。
 
-### 技术栈
-
-| 层 | 技术 |
-|----|------|
-| 桌面框架 | Tauri 2 |
-| 前端 | React 18 + TypeScript + Vite |
-| 状态管理 | Zustand |
-| 后端 | Rust（rusqlite / serde / windows crate） |
-| 数据库 | SQLite（bundled）+ FTS5 trigram |
-| 剪贴板 | Win32 API（`CF_UNICODETEXT`） |
-| 快捷键 | tauri-plugin-global-shortcut |
-| AI 协议 | OpenAI Chat Completions 兼容 |
-
-## 🧪 开发
+## 开发
 
 ```bash
 pnpm install
 
-# 开发模式（热更新）
-pnpm exec tauri dev
+pnpm exec tauri dev          # 开发模式，热更新
+pnpm typecheck               # types → core → ui
+pnpm test                    # TS 测试，自动发现 packages/*/__tests__/*.test.ts
+pnpm test content-type       # 只跑文件名匹配的
 
-# 类型检查（types → core → ui 三个包）
-pnpm typecheck
-
-# TypeScript 测试（自动发现 packages/*/__tests__/*.test.ts）
-pnpm test
-pnpm test content-type     # 只跑文件名匹配的测试
-
-# Rust 测试
 cd src-tauri && cargo test --lib storage::
-
-# 发布构建
-pnpm exec tauri build --bundles "msi,nsis"
 ```
 
-**当前测试规模：195 个测试全绿** —— TypeScript 161 个（15 个文件）+ Rust 34 个。
+目前 195 个测试：TypeScript 161 个（15 个文件），Rust 34 个。
 
-测试运行器 `scripts/run-tests.mjs` 自动发现测试文件并逐进程执行，新增测试文件无需手动登记。若某个文件退出码为 0 却没有输出测试摘要，运行器会判定为失败 —— 避免"套件其实没跑，但显示全绿"。
+`cargo test` 里剪贴板相关的用例需要真实桌面会话，在没有 GUI 的后台环境会永久阻塞（不是失败，是挂住），所以日常用 `cargo test --lib storage::` 限定到存储层。CI 也是这么做的。
 
-> ⚠️ `cargo test` 中剪贴板相关用例需要真实桌面会话。在无 GUI 的后台会话里它们会**永久阻塞**，请用 `cargo test --lib storage::` 限定模块。CI 也做了同样处理。
+测试运行器会检查每个文件有没有输出测试摘要：退出码 0 但没摘要的判为失败。之前有三个套件用 `console.assert` 断言，失败时只打日志不抛错，所以怎么跑都是绿的 —— 这条规则就是为了防止这种情况再次发生。
 
-更多细节见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) 与 [docs/BUILD-WINDOWS.md](docs/BUILD-WINDOWS.md)。
+更多细节见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
 
-## 🗺️ Roadmap
+## 还没做的
 
-- [ ] 图片剪贴板支持（当前仅 `CF_UNICODETEXT`）
-- [ ] 自定义 AI 操作与提示词编辑
-- [ ] 历史记录导入 / 导出（JSON、Markdown）
-- [ ] 更细的保留策略（按类型、按来源应用）
-- [ ] macOS / Linux 支持（需要重写剪贴板层）
-- [ ] 界面多语言（当前中文为主）
+- 图片剪贴板（目前只处理 `CF_UNICODETEXT`）
+- 自定义 AI 操作、可编辑提示词
+- 历史导入 / 导出
+- macOS / Linux（剪贴板层要整个重写）
+- 界面多语言（现在基本是中文）
 
-## 🤝 贡献
+## 贡献
 
-欢迎 Issue 和 PR。几个特别需要帮助的方向：
+Issue 和 PR 都欢迎。目前最缺的是一段**真实录屏 GIF** —— README 里现在只有流程图，看不到实际操作的样子。[docs/demo.gif.placeholder.md](docs/demo.gif.placeholder.md) 里写了录制步骤和推荐工具（ScreenToGif）。
 
-1. **演示 GIF** —— 目前 README 缺少一段真实录屏（`docs/demo.gif.placeholder.md` 里有录制脚本与推荐工具）。这是最有价值的贡献之一。
-2. **Windows 之外的剪贴板后端** —— `src-tauri/src/clipboard/` 目前是 Win32 专用。
-3. **新的内容类型识别规则** —— 全部集中在 `packages/core/src/detect/content-type.ts`，加规则 + 加测试即可。
+另外 `src-tauri/src/clipboard/` 是 Win32 专用的，要做跨平台得从这里下手；内容类型识别规则集中在 `packages/core/src/detect/content-type.ts`，加规则加测试就行。
 
-提交前请确保 `pnpm typecheck`、`pnpm test`、`cargo test --lib storage::` 全部通过。
+提交前跑一下 `pnpm typecheck`、`pnpm test`、`cargo test --lib storage::`。
 
-## 📄 协议
+## License
 
-[Apache License 2.0](LICENSE)
-
----
-
-<div align="center">
-
-**Made with ❤️ for AI-powered productivity**
-
-如果这个项目对你有帮助，欢迎点个 ⭐ Star —— 这是我继续维护下去最大的动力。
-
-</div>
+[Apache 2.0](LICENSE)

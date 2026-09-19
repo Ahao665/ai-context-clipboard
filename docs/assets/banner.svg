@@ -78,7 +78,7 @@
   <!-- installer size note -->
   <g font-family="Segoe UI, -apple-system, Helvetica Neue, Arial, sans-serif">
     <text x="254" y="336" font-size="16" fill="#6d82ad">
-      安装包 ~3 MB · 内存占用远低于 Electron · 数据不出本机
+      Windows 10/11 · Tauri 2 + Rust · 数据存在本地 SQLite
     </text>
   </g>
 
