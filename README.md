@@ -71,10 +71,10 @@ Windows 自带剪贴板只能存 25 条、搜不了中文、更没有 AI。市�
 
 前往 [**Releases**](../../releases/latest) 下载最新安装包：
 
-| 格式 | 文件 | 说明 |
-|------|------|------|
-| MSI | `AI Context Clipboard_0.3.0_x64_en-US.msi` | 双击安装，适合企业分发 |
-| NSIS | `AI Context Clipboard_0.3.0_x64-setup.exe` | 体积更小，安装向导更友好 |
+| 格式 | 文件 | 体积 | 说明 |
+|------|------|------|------|
+| NSIS | `AI Context Clipboard_0.3.0_x64-setup.exe` | 约 3.2 MB | 体积最小，安装向导友好（推荐） |
+| MSI | `AI Context Clipboard_0.3.0_x64_en-US.msi` | 约 5.4 MB | 适合企业分发 / 组策略部署 |
 
 ```bash
 # 或命令行安装
