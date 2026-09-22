@@ -2,6 +2,29 @@
 
 All notable changes to AI Context Clipboard are documented in this file.
 
+## [0.3.2] - 2026-09-22
+
+### Features
+
+- **开机自启，可选、默认关闭。** 设置面板新增「启动」一节。打开后登录 Windows 就在托盘里
+  运行，不弹窗口；关掉之后任务管理器的「启动」标签也不会留下残留。
+
+  实现直接写 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`，没有引入 autostart 插件：
+  项目本来就是 Windows-only，剪贴板那块已经在调 Win32，为此多一个依赖不划算 —— 安装包体积
+  也是这么省下来的。选 `HKCU` 而不是 `HKLM`，是因为前者不需要管理员权限，而且任务管理器的
+  「启动」标签里能看到、能关掉；用户在那边关掉之后，程序不该再自作主张加回来。
+
+  两个不显然的地方：
+
+  - 「当前开没开」是**读注册表**，不是读自己的设置表。用户可能已经从任务管理器里把它关了，
+    存一个标志位只会和现实对不上。
+  - `set_autostart` 返回**改完之后注册表报告的状态**，而不是把请求值回显回去。写不进去
+    （键被锁，或组策略禁止 `Run` 项）时界面会显示失败，而不是给一个看起来成功、实际没生效的
+    开关。
+
+- CI 的 Rust 测试新增 `commands::autostart::` 过滤器。这组用例只覆盖 UTF-16 转换、
+  `Run` 键路径和命令行引号处理，不碰注册表，所以在无桌面会话的 runner 上是安全的。
+
 ## [0.3.1] - 2026-09-22
 
 Everything below comes from a pass over the app asking "what does this actually

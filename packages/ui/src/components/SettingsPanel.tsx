@@ -22,11 +22,13 @@ export function SettingsPanel({ onClose }: Props) {
     privacyAccepted,
     skipSensitive,
     shortcut,
+    autostart,
     loadConfig,
     updateConfig,
     setPrivacyPreference,
     setSkipSensitivePreference,
     setShortcutAction,
+    setAutostartPreference,
     historyCount,
     refreshHistoryCount,
     clearHistoryAction,
@@ -42,6 +44,7 @@ export function SettingsPanel({ onClose }: Props) {
   const [recordHint, setRecordHint] = useState<string | null>(null);
   const [shortcutStatus, setShortcutStatus] = useState<Status>(null);
   const recorderRef = useRef<HTMLDivElement>(null);
+  const [autostartStatus, setAutostartStatus] = useState<Status>(null);
 
   // Re-sync the draft whenever the underlying config changes (e.g. first load).
   useEffect(() => {
@@ -183,6 +186,32 @@ export function SettingsPanel({ onClose }: Props) {
   const handleClose = () => {
     if (recording) void stopRecording();
     onClose();
+  };
+
+  // --- Autostart -----------------------------------------------------------
+
+  /**
+   * Toggle start-with-Windows.
+   *
+   * The backend resolves with the state the OS reports *after* the write, so a
+   * refused change (a locked registry key, or a policy blocking `Run` entries)
+   * surfaces as a mismatch instead of a switch that silently does nothing.
+   */
+  const handleAutostart = async (enabled: boolean) => {
+    setAutostartStatus(null);
+    try {
+      const actual = await setAutostartPreference(enabled);
+      if (actual !== enabled) {
+        setAutostartStatus({
+          kind: 'error',
+          text: enabled ? '开启失败，系统拒绝了这次修改' : '关闭失败，系统拒绝了这次修改',
+        });
+        return;
+      }
+      setAutostartStatus({ kind: 'ok', text: enabled ? '已开启' : '已关闭' });
+    } catch {
+      setAutostartStatus({ kind: 'error', text: '设置失败，请重试' });
+    }
   };
 
   return (
@@ -379,6 +408,33 @@ export function SettingsPanel({ onClose }: Props) {
             <p className="settings-hint">
               被其他程序占用时会设置失败并保留原来的按键。关闭窗口不会退出程序，可以从托盘菜单退出。
             </p>
+          </section>
+
+          {/* --- Startup --- */}
+          <section className="settings-section">
+            <h3>启动</h3>
+            <label className="settings-switch">
+              <input
+                type="checkbox"
+                checked={autostart}
+                onChange={(e) => void handleAutostart(e.target.checked)}
+              />
+              <span>
+                开机自启
+                <em className="settings-sub">
+                  登录 Windows 后自动在托盘里运行，不弹窗口。默认关闭
+                </em>
+              </span>
+            </label>
+            {autostartStatus && (
+              <p
+                className={
+                  autostartStatus.kind === 'error' ? 'settings-warn' : 'settings-status ok'
+                }
+              >
+                {autostartStatus.text}
+              </p>
+            )}
           </section>
         </div>
       </div>

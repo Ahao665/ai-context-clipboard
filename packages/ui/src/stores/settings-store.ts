@@ -10,6 +10,8 @@ import {
   countEntries,
   loadShortcut,
   setShortcut,
+  getAutostart,
+  setAutostart,
 } from '../lib/tauri-api';
 import type { AIProviderConfig } from '@ai-clipboard/types';
 
@@ -21,6 +23,8 @@ interface SettingsState {
   skipSensitive: boolean;
   /** Current panel-toggle binding, e.g. `Alt+Space`. */
   shortcut: string;
+  /** Whether the app starts with Windows. Mirrors the OS, not a stored flag. */
+  autostart: boolean;
   loading: boolean;
   historyCount: number;
   loadConfig: () => Promise<void>;
@@ -33,6 +37,11 @@ interface SettingsState {
   setSkipSensitivePreference: (skip: boolean) => Promise<void>;
   /** Rebind the panel shortcut. Resolves with the binding that is now live. */
   setShortcutAction: (spec: string) => Promise<string>;
+  /**
+   * Turn start-with-Windows on or off. Resolves with the state the OS reports
+   * afterwards, which may differ from the argument if the write was refused.
+   */
+  setAutostartPreference: (enabled: boolean) => Promise<boolean>;
   refreshHistoryCount: () => Promise<void>;
   /** Soft-delete every entry. Returns the number removed. */
   clearHistoryAction: () => Promise<number>;
@@ -44,15 +53,19 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   privacyChecked: false,
   skipSensitive: false,
   shortcut: '',
+  autostart: false,
   loading: true,
   historyCount: 0,
   loadConfig: async () => {
-    const [config, shortcut, skipSensitive] = await Promise.all([
+    const [config, shortcut, skipSensitive, autostart] = await Promise.all([
       loadAIConfig(),
       loadShortcut(),
       getSetting('privacy.skip_sensitive').then((v) => v === 'true').catch(() => false),
+      // Queried from the OS rather than remembered locally: the user can remove
+      // the entry from Task Manager's startup tab without telling us.
+      getAutostart().catch(() => false),
     ]);
-    set({ aiConfig: config, shortcut, skipSensitive, loading: false });
+    set({ aiConfig: config, shortcut, skipSensitive, autostart, loading: false });
   },
   updateConfig: async (config) => {
     await saveAIConfig(config);
@@ -85,6 +98,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     const applied = await setShortcut(spec);
     set({ shortcut: applied });
     return applied;
+  },
+  setAutostartPreference: async (enabled) => {
+    const actual = await setAutostart(enabled);
+    set({ autostart: actual });
+    return actual;
   },
   refreshHistoryCount: async () => {
     try {

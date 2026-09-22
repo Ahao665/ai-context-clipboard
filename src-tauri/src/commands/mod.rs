@@ -1,3 +1,4 @@
+pub mod autostart;
 pub mod clipboard;
 pub mod maintenance;
 pub mod settings;

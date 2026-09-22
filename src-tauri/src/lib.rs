@@ -126,6 +126,8 @@ pub fn run() {
             commands::settings::set_setting,
             commands::shortcut::set_shortcut,
             commands::shortcut::clear_shortcut,
+            commands::autostart::get_autostart,
+            commands::autostart::set_autostart,
             commands::clipboard::set_clipboard,
             commands::maintenance::count_entries,
             commands::maintenance::clear_history,

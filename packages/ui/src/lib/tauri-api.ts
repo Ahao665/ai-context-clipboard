@@ -141,3 +141,21 @@ export async function setShortcut(shortcut: string): Promise<string> {
 export async function clearShortcut(): Promise<void> {
   await invoke('clear_shortcut');
 }
+
+// --- Autostart ---
+
+/** Whether the app is currently registered to start with Windows. */
+export async function getAutostart(): Promise<boolean> {
+  return invoke('get_autostart');
+}
+
+/**
+ * Turn start-with-Windows on or off.
+ *
+ * Resolves with the state the OS reports *after* the change, which can differ
+ * from `enabled` if the registry write was refused — callers should trust the
+ * resolved value, not the argument.
+ */
+export async function setAutostart(enabled: boolean): Promise<boolean> {
+  return invoke('set_autostart', { enabled });
+}
