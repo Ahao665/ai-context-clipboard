@@ -678,3 +678,149 @@ mod tests {
         assert_eq!(content.original_len, MAX_CLIPBOARD_CHARS);
     }
 }
+
+/// Tests that drive the real Windows clipboard.
+///
+/// Kept in a separate module so CI can skip them by name: they need a desktop
+/// session and **hang** (rather than fail) without one. Everything above this
+/// point is pure logic and safe anywhere.
+#[cfg(all(test, target_os = "windows"))]
+mod desktop {
+    use super::*;
+    use crate::clipboard::image::{
+        downscale, row_stride, thumbnail_name, to_bmp, Pixels, THUMBNAIL_EDGE,
+    };
+    use crate::clipboard::writer::{
+        write_clipboard_image, write_clipboard_text, write_clipboard_text_and_image,
+    };
+    use crate::clipboard::CLIPBOARD_LOCK;
+
+    /// A 3×2 image whose six pixels are all distinct.
+    ///
+    /// Every pixel differing from every other is the point: a flipped row or a
+    /// stride mistake shows up as a mismatch instead of passing by luck.
+    fn sample_image() -> Pixels {
+        const PIXELS: [[u8; 3]; 6] = [
+            [1, 2, 3],
+            [4, 5, 6],
+            [7, 8, 9],
+            [10, 11, 12],
+            [13, 14, 15],
+            [16, 17, 18],
+        ];
+        let width = 3u32;
+        let height = 2u32;
+        let stride = row_stride(width, 3);
+        let mut data = vec![0u8; stride * height as usize];
+
+        for y in 0..height as usize {
+            for x in 0..width as usize {
+                // Rows are padded, so the offset is `y * stride + x * 3` — not
+                // a running pixel index, which would spill into the padding.
+                let offset = y * stride + x * 3;
+                data[offset..offset + 3].copy_from_slice(&PIXELS[y * width as usize + x]);
+            }
+        }
+
+        Pixels {
+            width,
+            height,
+            stride,
+            data,
+        }
+    }
+
+    fn temp_images_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("aicc_capture_{tag}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp images dir");
+        dir
+    }
+
+    /// The whole capture path against the real clipboard: bitmap in, BMP files
+    /// on disk, described well enough for the UI to find them again.
+    #[test]
+    fn test_capture_writes_an_image_off_the_clipboard_to_disk() {
+        let _guard = CLIPBOARD_LOCK.lock().unwrap();
+        let dir = temp_images_dir("image");
+        let source = sample_image();
+
+        write_clipboard_image(&to_bmp(&source)).expect("put an image on the clipboard");
+        let captured = read_clipboard(&dir);
+
+        assert!(
+            !captured.is_empty(),
+            "a bitmap on the clipboard must not be dropped"
+        );
+        assert!(captured.text.is_none(), "an image-only copy carries no text");
+
+        let image = captured.image.expect("the capture must describe an image");
+        assert_eq!((image.width, image.height), (source.width, source.height));
+
+        // The file is named after the content hash, and the UI looks images up
+        // by exactly that name later. A mismatch here means pictures that
+        // capture fine and then never render.
+        assert_eq!(image.file_name, format!("{}.bmp", captured.content_hash));
+        assert_eq!(image.thumbnail_name, thumbnail_name(&image.file_name));
+
+        let full = std::fs::read(dir.join(&image.file_name)).expect("full-size BMP written");
+        let thumb = std::fs::read(dir.join(&image.thumbnail_name)).expect("thumbnail written");
+
+        assert_eq!(full.len(), image.byte_len);
+        assert_eq!(
+            full,
+            to_bmp(&source),
+            "the stored BMP must be byte-identical to what went in"
+        );
+        // Too small to downscale, so the thumbnail is a copy rather than an
+        // upscale — worth pinning, since upscaling would be pure waste.
+        assert_eq!(thumb, full);
+    }
+
+    /// Copying out of a browser or an editor usually puts text *and* a bitmap on
+    /// the clipboard. Storing the screenshot instead of the text would be a
+    /// silent and very annoying regression, so it gets its own test.
+    #[test]
+    fn test_capture_prefers_text_when_the_clipboard_offers_both() {
+        let _guard = CLIPBOARD_LOCK.lock().unwrap();
+        let dir = temp_images_dir("text_wins");
+
+        write_clipboard_text_and_image("hello 剪贴板", &to_bmp(&sample_image()))
+            .expect("put both flavours on the clipboard");
+
+        let captured = read_clipboard(&dir);
+
+        assert_eq!(
+            captured.text.as_deref(),
+            Some("hello 剪贴板"),
+            "text must win over the bitmap"
+        );
+        assert!(captured.image.is_none(), "the bitmap must be ignored");
+
+        // The discarded bitmap must not have been written to disk either.
+        let written = std::fs::read_dir(&dir).expect("images dir").count();
+        assert_eq!(written, 0, "no image files for a text capture");
+    }
+
+    /// A capture that cannot be decoded must leave the text path untouched
+    /// rather than half-writing files.
+    #[test]
+    fn test_capture_of_an_empty_clipboard_stores_nothing() {
+        let _guard = CLIPBOARD_LOCK.lock().unwrap();
+        let dir = temp_images_dir("empty");
+
+        // An empty string is a legitimate clipboard state and must not be
+        // mistaken for "no capture".
+        write_clipboard_text("").expect("empty text write");
+        let captured = read_clipboard(&dir);
+
+        assert!(captured.is_empty(), "an empty copy is not worth storing");
+        assert_eq!(std::fs::read_dir(&dir).expect("images dir").count(), 0);
+    }
+
+    #[test]
+    fn test_downscale_is_a_no_op_for_a_thumbnail_sized_image() {
+        let source = sample_image();
+        assert_eq!(downscale(&source, THUMBNAIL_EDGE), source);
+    }
+}

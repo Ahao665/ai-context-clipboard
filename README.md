@@ -131,15 +131,17 @@ pnpm test content-type       # 只跑文件名匹配的
 cd src-tauri && cargo test --lib
 ```
 
-282 个测试：TypeScript 186（16 个文件）+ Rust 96。
+286 个测试：TypeScript 186（16 个文件）+ Rust 100。
 
-`cargo test --lib` 里有五个用例（`clipboard::writer`）要真实桌面会话，无 GUI 环境会挂住（不是失败，是一直等），所以 CI 把它们排除掉：
+`cargo test --lib` 里有九个用例要真实桌面会话（`clipboard::writer` 的 5 个往返测试 + `clipboard::watcher::desktop` 的 4 个捕获测试），无 GUI 环境会挂住（不是失败，是一直等），所以 CI 跳过它们：
 
 ```bash
-cd src-tauri && cargo test --lib -- storage:: clipboard::watcher:: clipboard::image:: shortcut:: commands::
+cd src-tauri && cargo test --lib -- --skip clipboard::writer:: --skip clipboard::watcher::desktop::
 ```
 
-CI 上跑 91 个，本地跑 96 个。差的那五个是真实的剪贴板读写往返 —— 包括图片写进剪贴板再读回来比对像素，那是唯一能发现「粘贴出来上下颠倒」的测试，所以本地值得跑全量。
+CI 上跑 91 个，本地跑 100 个。跳过的那九个是真的在读写系统剪贴板：图片写进去再读回来比对像素、截图落盘后是否和源字节一致、以及**同时有文字和图片时文字优先**。最后一条尤其值得本地跑 —— 它错了的话，从浏览器里复制会存成一张截图，而且不报任何错。
+
+用 `--skip` 而不是列一串要跑的模块，是因为白名单得在每次加模块时手动更新，而且前缀匹配很容易误伤：为了让新的 `clipboard::image` 跑起来而写成 `clipboard::`，会把本来要排除的 `clipboard::writer` 一起放回来。
 
 测试运行器会检查每个文件有没有输出测试摘要，退出码 0 但没摘要的算失败。之前有三个套件用 `console.assert` 断言 —— 它失败时只打日志不抛错，所以怎么跑都是绿的。
 

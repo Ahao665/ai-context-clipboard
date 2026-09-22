@@ -25,16 +25,17 @@ jobs:
           workspaces: src-tauri
       - name: Rust tests (headless-safe modules)
         working-directory: src-tauri
-        # The clipboard round-trip tests in `clipboard::writer` drive the real
-        # Windows clipboard, which CI runners do not provide — they either block
-        # or fail on `OpenClipboard`. Everything listed here is pure data logic:
-        # `commands::autostart` only exercises the UTF-16/command-line helpers and
-        # never touches the registry.
+        # Run everything except the tests that drive the real Windows clipboard,
+        # which CI runners do not provide — those block on `OpenClipboard`
+        # instead of failing, so a scoped run is the only way to get a verdict.
+        #
+        # `--skip` rather than a list of modules to include: an include list has
+        # to be updated whenever a module is added, and a broad prefix silently
+        # re-includes what you meant to leave out (naming `clipboard::` to pick
+        # up a new submodule also pulls `clipboard::writer` back in).
+        #
         # Filters go after `--` because cargo itself accepts only one TESTNAME.
         # NOTE: the value MUST be quoted — a trailing "::" in a plain scalar is
         # parsed as a mapping key indicator and makes the whole file invalid.
-        # `clipboard::writer` is deliberately left out: its round-trip tests need
-        # a real desktop session and hang (rather than fail) without one.
-        # `clipboard::image` is pure byte manipulation, so it is safe here.
-        run: "cargo test --lib -- storage:: clipboard::watcher:: clipboard::image:: shortcut:: commands::"
+        run: "cargo test --lib -- --skip clipboard::writer:: --skip clipboard::watcher::desktop::"
 

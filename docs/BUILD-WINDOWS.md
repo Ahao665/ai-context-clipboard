@@ -66,17 +66,25 @@ link 2>&1 | head -2
 
 ## 关于 `cargo test` 卡住
 
-`clipboard::writer::tests::*`（5 个用例）需要真实的 Windows 剪贴板。在无桌面会话的
-后台环境里这些用例会阻塞，表现为 `cargo test` 长时间无输出 —— 不是失败，是一直等。
+有九个用例需要真实的 Windows 剪贴板：`clipboard::writer::tests`（5 个读写往返）和
+`clipboard::watcher::desktop`（4 个捕获路径）。在无桌面会话的后台环境里它们会阻塞，
+表现为 `cargo test` 长时间无输出 —— 不是失败，是一直等。
 
-CI 上排除它们，只跑纯逻辑部分：
+CI 上跳过它们，其余照跑：
 
 ```bash
-cd src-tauri && cargo test --lib -- storage:: clipboard::watcher:: clipboard::image:: shortcut:: commands::
+cd src-tauri && cargo test --lib -- --skip clipboard::writer:: --skip clipboard::watcher::desktop::
 ```
 
-本地有桌面会话的话跑全量（`cargo test --lib`）。那 5 个里有一个是真实的图片写入-读回
-往返，比对像素是否一致 —— 它是唯一能发现「粘贴出来上下颠倒」的测试，所以本地值得跑。
+用 `--skip` 而不是列一串要跑的模块，是因为白名单得在每次加模块时手动更新，而且前缀匹配
+很容易误伤 —— 为了让新的 `clipboard::image` 跑起来而写成 `clipboard::`，会把本来要排除的
+`clipboard::writer` 一起放回来。
+
+本地有桌面会话的话跑全量（`cargo test --lib`），100 个。那九个里有三个值得盯着：
+
+- 图片写进剪贴板再读回来比对像素 —— 唯一能发现「粘贴出来上下颠倒」的测试
+- 截图捕获落盘后是否和源字节一致
+- 剪贴板同时有文字和图片时，存的是文字 —— 错了的话从浏览器复制会静默存成截图
 
 ## 关于 `target/` 的体积
 
