@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { ActionId, ClipboardEntry } from '@ai-clipboard/types';
 import { CommandPalette } from './components/CommandPalette';
@@ -9,7 +10,7 @@ import { PrivacyDialog } from './components/PrivacyDialog';
 import { SettingsPanel } from './components/SettingsPanel';
 import { useClipboard } from './hooks/useClipboard';
 import { useAI } from './hooks/useAI';
-import { setClipboard } from './lib/tauri-api';
+import { deleteEntry, setClipboard } from './lib/tauri-api';
 import { useClipboardStore } from './stores/clipboard-store';
 import { useSettingsStore } from './stores/settings-store';
 import './App.css';
@@ -19,11 +20,17 @@ interface PendingAction {
   handler: () => void;
 }
 
+/** How long a transient notice stays on screen. */
+const NOTICE_TIMEOUT_MS = 5000;
+/** How long the detail-view delete button stays armed. */
+const DELETE_CONFIRM_TIMEOUT_MS = 3000;
+
 export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const { entries } = useClipboardStore();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const { entries, notice, dismissNotice } = useClipboardStore();
   const { privacyAccepted, privacyChecked, checkPrivacy, acceptPrivacyAction } = useSettingsStore();
   const {
     state,
@@ -32,6 +39,7 @@ export default function App() {
     runRewrite,
     runReply,
     runExplain,
+    cancel,
     clearResult,
   } = useAI();
 
@@ -40,6 +48,36 @@ export default function App() {
   useEffect(() => {
     checkPrivacy();
   }, [checkPrivacy]);
+
+  // The tray's "设置…" item opens this panel.
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    listen('app:open-settings', () => setShowSettings(true)).then((fn) => {
+      unlisten = fn;
+    });
+    return () => {
+      unlisten?.();
+    };
+  }, []);
+
+  // Auto-dismiss notices; `notice` is a fresh object on every show, so the
+  // timer restarts even for two identical messages in a row.
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => dismissNotice(), NOTICE_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [notice, dismissNotice]);
+
+  // Disarm the delete button after a moment, and whenever the selection moves.
+  useEffect(() => {
+    if (!confirmDelete) return;
+    const timer = window.setTimeout(() => setConfirmDelete(false), DELETE_CONFIRM_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [confirmDelete]);
+
+  useEffect(() => {
+    setConfirmDelete(false);
+  }, [selectedId]);
 
   const selectedEntry = entries.find((e) => e.id === selectedId);
 
@@ -119,6 +157,20 @@ export default function App() {
     void getCurrentWindow().hide();
   }, []);
 
+  const handleDeleteSelected = useCallback(async () => {
+    if (!selectedEntry) return;
+    const snapshot = useClipboardStore.getState().entries;
+    useClipboardStore.getState().removeEntry(selectedEntry.id);
+    setSelectedId(null);
+    clearResult();
+    try {
+      await deleteEntry(selectedEntry.id);
+    } catch {
+      // Put it back — the backend still has it.
+      useClipboardStore.getState().setEntries(snapshot);
+    }
+  }, [selectedEntry, clearResult]);
+
   const actions: ActionBarAction[] = [
     { id: 'summarize', label: '总结', title: '提取内容要点', handler: () => withContent((c) => withPrivacy('总结', () => runSummarize(c))) },
     { id: 'translate', label: '翻译', title: '翻译为中文', handler: () => withContent((c) => withPrivacy('翻译', () => runTranslate(c))) },
@@ -153,20 +205,45 @@ export default function App() {
 
       {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
 
+      {notice && (
+        <div className={`app-notice ${notice.kind}`} role="status">
+          <span>{notice.text}</span>
+          <button
+            type="button"
+            className="app-notice-close"
+            onClick={dismissNotice}
+            aria-label="关闭提示"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {selectedEntry ? (
         <>
           <header className="app-header">
             <button className="back-btn" onClick={handleBack}>
               ← 返回
             </button>
-            <button
-              className="header-icon-btn"
-              onClick={() => setShowSettings(true)}
-              title="设置"
-              aria-label="设置"
-            >
-              ⚙
-            </button>
+            <div className="app-header-actions">
+              <button
+                type="button"
+                className={`header-icon-btn danger ${confirmDelete ? 'confirming' : ''}`}
+                onClick={() => (confirmDelete ? void handleDeleteSelected() : setConfirmDelete(true))}
+                title={confirmDelete ? '再点一次删除这条记录' : '删除这条记录'}
+                aria-label={confirmDelete ? '确认删除' : '删除'}
+              >
+                {confirmDelete ? '确认删除' : '🗑'}
+              </button>
+              <button
+                className="header-icon-btn"
+                onClick={() => setShowSettings(true)}
+                title="设置"
+                aria-label="设置"
+              >
+                ⚙
+              </button>
+            </div>
           </header>
           <main className="app-main">
             <div className="detail-view">
@@ -174,7 +251,7 @@ export default function App() {
                 {selectedEntry.content ?? '(空)'}
               </div>
               <ActionBar actions={actions} disabled={state.loading} />
-              <AIResultView result={state.result} loading={state.loading} />
+              <AIResultView result={state.result} loading={state.loading} onCancel={cancel} />
             </div>
           </main>
         </>

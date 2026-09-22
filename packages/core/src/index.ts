@@ -1,5 +1,6 @@
 export { EventBus, globalEventBus } from './event-bus';
-export { AIClient } from './ai/client';
+export { AIClient, DEFAULT_TIMEOUT_MS } from './ai/client';
+export type { ChatOptions } from './ai/client';
 export { executeSummarize, buildSummarizePrompt } from './actions/summarize';
 export { executeTranslate, buildTranslatePrompt } from './actions/translate';
 export { executeRewrite, buildRewritePrompt } from './actions/rewrite';

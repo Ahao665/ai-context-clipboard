@@ -1,5 +1,5 @@
 import type { ActionResult } from '@ai-clipboard/types';
-import { AIClient } from '../ai/client';
+import { AIClient, type ChatOptions } from '../ai/client';
 import { executeAction } from './shared';
 
 export function buildTranslatePrompt(content: string): string {
@@ -9,6 +9,7 @@ export function buildTranslatePrompt(content: string): string {
 export async function executeTranslate(
   client: AIClient,
   content: string,
+  options?: ChatOptions,
 ): Promise<ActionResult> {
-  return executeAction(client, content, buildTranslatePrompt, 'text.translate', '内容为空，无法翻译');
+  return executeAction(client, content, buildTranslatePrompt, 'text.translate', '内容为空，无法翻译', options);
 }

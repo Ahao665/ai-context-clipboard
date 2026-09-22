@@ -22,6 +22,9 @@ export function useAI() {
   const [state, setState] = useState<AIState>({ loading: false, result: null });
   const clientRef = useRef<AIClient | null>(null);
   const runningRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
+  /** Identifies the in-flight run so a cancelled one cannot overwrite a newer one. */
+  const runIdRef = useRef(0);
   const { aiConfig, loadConfig } = useSettingsStore();
 
   useEffect(() => {
@@ -29,8 +32,15 @@ export function useAI() {
   }, [loadConfig]);
 
   useEffect(() => {
+    // The client must be rebuilt *or dropped* whenever the config changes.
+    // Assigning only when a key is present used to leave the previous client in
+    // place, so clearing the API key kept sending requests with the old one
+    // instead of reporting that no key is configured.
     if (aiConfig.apiKey) {
-      clientRef.current = new AIClient(aiConfig);
+      if (clientRef.current) clientRef.current.updateConfig(aiConfig);
+      else clientRef.current = new AIClient(aiConfig);
+    } else {
+      clientRef.current = null;
     }
   }, [aiConfig]);
 
@@ -38,7 +48,11 @@ export function useAI() {
     async (
       actionId: ActionResult['actionId'],
       content: string,
-      executor: (client: AIClient, content: string) => Promise<ActionResult>,
+      executor: (
+        client: AIClient,
+        content: string,
+        options: { signal: AbortSignal },
+      ) => Promise<ActionResult>,
     ) => {
       // Double-click guard
       if (runningRef.current) return;
@@ -53,7 +67,8 @@ export function useAI() {
       }
 
       // API key guard
-      if (!clientRef.current) {
+      const client = clientRef.current;
+      if (!client) {
         setState({
           loading: false,
           result: { actionId, content: '', success: false, error: NO_API_KEY_MSG },
@@ -62,22 +77,46 @@ export function useAI() {
       }
 
       runningRef.current = true;
+      const runId = ++runIdRef.current;
+      const controller = new AbortController();
+      abortRef.current = controller;
       setState({ loading: true, result: null });
 
       try {
-        const actionResult = await executor(clientRef.current, content);
+        const actionResult = await executor(client, content, { signal: controller.signal });
+        if (runIdRef.current !== runId) return; // superseded by a cancel + retry
         setState({ loading: false, result: actionResult });
       } catch {
+        if (runIdRef.current !== runId) return;
         setState({
           loading: false,
           result: { actionId, content: '', success: false, error: '操作失败，请稍后重试' },
         });
       } finally {
-        runningRef.current = false;
+        if (runIdRef.current === runId) {
+          runningRef.current = false;
+          abortRef.current = null;
+        }
       }
     },
     [],
   );
+
+  /**
+   * Abort the in-flight request.
+   *
+   * `executeAction` turns the resulting abort into a normal failed
+   * `ActionResult`, but that result is deliberately discarded — the panel
+   * simply returns to its idle state, which is what a cancel should look like.
+   */
+  const cancel = useCallback(() => {
+    if (!abortRef.current) return;
+    runIdRef.current += 1; // invalidate the in-flight run
+    runningRef.current = false;
+    abortRef.current.abort();
+    abortRef.current = null;
+    setState({ loading: false, result: null });
+  }, []);
 
   const runSummarize = useCallback(
     (content: string) => run('text.summarize', content, executeSummarize),
@@ -115,6 +154,7 @@ export function useAI() {
     runRewrite,
     runReply,
     runExplain,
+    cancel,
     clearResult,
   };
 }

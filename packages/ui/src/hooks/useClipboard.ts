@@ -1,5 +1,6 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { detectContent } from '@ai-clipboard/core';
 import { useClipboardStore } from '../stores/clipboard-store';
 import {
@@ -15,13 +16,19 @@ import type { ClipboardEntry } from '@ai-clipboard/types';
 interface ClipboardEventPayload {
   text?: string;
   content_hash: string;
+  /** Set by the backend when the text exceeded its size cap. */
+  truncated?: boolean;
+  /** Character count before truncation. */
+  original_len?: number;
+  source_app?: string | null;
+  source_window?: string | null;
 }
 
 /** How many recent entries are held in memory for browsing. */
 const HISTORY_WINDOW = 200;
 
 export function useClipboard() {
-  const { setEntries, addEntry, setLoading, contentType } = useClipboardStore();
+  const { setEntries, addEntry, setLoading, contentType, showNotice } = useClipboardStore();
   const skipSensitiveRef = useRef(false);
 
   /**
@@ -60,15 +67,13 @@ export function useClipboard() {
     void loadPreference();
 
     let unlisten: (() => void) | null = null;
-    import('@tauri-apps/api/window').then(({ getCurrentWindow }) =>
-      getCurrentWindow()
-        .onFocusChanged(({ payload: focused }) => {
-          if (focused) void loadPreference();
-        })
-        .then((fn) => {
-          unlisten = fn;
-        }),
-    );
+    getCurrentWindow()
+      .onFocusChanged(({ payload: focused }) => {
+        if (focused) void loadPreference();
+      })
+      .then((fn) => {
+        unlisten = fn;
+      });
 
     return () => {
       unlisten?.();
@@ -79,7 +84,14 @@ export function useClipboard() {
     let unlisten: (() => void) | null = null;
 
     listen<ClipboardEventPayload>('clipboard:changed', async (event) => {
-      const { text, content_hash } = event.payload;
+      const {
+        text,
+        content_hash,
+        truncated,
+        original_len,
+        source_app,
+        source_window,
+      } = event.payload;
       if (!text || !text.trim()) return;
 
       // Dedup: the watcher already suppresses repeats within a session, but a
@@ -90,8 +102,12 @@ export function useClipboard() {
       const detection = detectContent(text);
 
       // Honour the "skip sensitive content" preference. Applied before saving so
-      // the credential never reaches the database.
-      if (detection.sensitive && skipSensitiveRef.current) return;
+      // the credential never reaches the database — but the user is told, since
+      // a silent drop looks exactly like a broken app.
+      if (detection.sensitive && skipSensitiveRef.current) {
+        showNotice('已跳过一条疑似敏感内容（可在设置里关闭「跳过敏感内容」）', 'warn');
+        return;
+      }
 
       const now = Date.now();
       const entry: ClipboardEntry = {
@@ -102,15 +118,24 @@ export function useClipboard() {
         content: text,
         content_preview: buildPreview(text),
         content_storage: 'inline',
-        content_size: text.length,
-        source_app: undefined,
-        source_window: undefined,
+        // The backend caps what it stores; keep the *original* size so the
+        // record still says how big the copy really was.
+        content_size: original_len ?? text.length,
+        source_app: source_app ?? undefined,
+        source_window: source_window ?? undefined,
         is_deleted: false,
         created_at: now,
         updated_at: now,
       };
 
       await saveEntry(entry);
+
+      if (truncated) {
+        showNotice(
+          `内容过长（${original_len ?? '?'} 字符），只保存了前 ${text.length} 字符`,
+          'warn',
+        );
+      }
 
       // With a type filter active, only surface the entry if it matches —
       // otherwise the visible list would contradict the selected filter.
@@ -124,7 +149,7 @@ export function useClipboard() {
     return () => {
       unlisten?.();
     };
-  }, [addEntry, contentType]);
+  }, [addEntry, contentType, showNotice]);
 
   return { refreshEntries };
 }

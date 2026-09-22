@@ -1,4 +1,5 @@
 import { AIClient } from '../ai/client';
+import type { ChatOptions } from '../ai/client';
 import type { ActionId, ActionResult, AIError } from '@ai-clipboard/types';
 
 const MAX_CHARS = 50_000;
@@ -9,6 +10,7 @@ export async function executeAction(
   buildPrompt: (content: string) => string,
   actionId: ActionId,
   emptyMessage?: string,
+  options?: ChatOptions,
 ): Promise<ActionResult> {
   // Empty content check
   if (!content || !content.trim()) {
@@ -32,7 +34,7 @@ export async function executeAction(
 
   try {
     const prompt = buildPrompt(content);
-    const response = await client.chat([{ role: 'user', content: prompt }]);
+    const response = await client.chat([{ role: 'user', content: prompt }], options);
     const result = response.choices[0]?.message?.content ?? '';
 
     // Empty result from AI

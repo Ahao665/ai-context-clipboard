@@ -1,4 +1,4 @@
-import { AIClient } from '../src/ai/client';
+import { AIClient, DEFAULT_TIMEOUT_MS } from '../src/ai/client';
 import type { AIProviderConfig, AIResponse } from '@ai-clipboard/types';
 
 /**
@@ -327,6 +327,136 @@ async function test_custom_base_url() {
   console.log('✅ test_custom_base_url passed');
 }
 
+// --- Timeout & cancellation ------------------------------------------------
+
+/** Mimics how real `fetch` rejects when its signal is aborted. */
+function abortError(): DOMException {
+  return new DOMException('The operation was aborted.', 'AbortError');
+}
+
+/** A fetch that never settles on its own, but honours `init.signal`. */
+function mockHangingFetch(): typeof fetch {
+  return (async (_url: string, init: RequestInit) => {
+    return new Promise<Response>((_resolve, reject) => {
+      const signal = init.signal;
+      if (signal?.aborted) {
+        reject(abortError());
+        return;
+      }
+      signal?.addEventListener('abort', () => reject(abortError()));
+    });
+  }) as unknown as typeof fetch;
+}
+
+/** Run `chat` and hand back the rejection instead of throwing. */
+async function captureRejection(
+  client: AIClient,
+  options: Parameters<AIClient['chat']>[1],
+): Promise<{ type?: string; message?: string } | null> {
+  try {
+    await client.chat([{ role: 'user', content: 'hi' }], options);
+    return null;
+  } catch (err) {
+    return err as { type?: string; message?: string };
+  }
+}
+
+function test_default_timeout_is_exported_and_sane() {
+  assert(
+    typeof DEFAULT_TIMEOUT_MS === 'number' && DEFAULT_TIMEOUT_MS > 0,
+    'DEFAULT_TIMEOUT_MS must be a positive number',
+  );
+  // Long enough for a real completion, short enough that a stalled request does
+  // not look like a freeze.
+  assert(DEFAULT_TIMEOUT_MS >= 10_000, `too short: ${DEFAULT_TIMEOUT_MS}ms`);
+  assert(DEFAULT_TIMEOUT_MS <= 300_000, `too long: ${DEFAULT_TIMEOUT_MS}ms`);
+}
+
+async function test_stalled_request_times_out() {
+  globalThis.fetch = mockHangingFetch() as unknown as typeof fetch;
+  const client = new AIClient(TEST_CONFIG);
+
+  const started = Date.now();
+  const err = await captureRejection(client, { timeoutMs: 60 });
+  const elapsed = Date.now() - started;
+
+  assert(err !== null, 'a stalled request must reject rather than hang forever');
+  assert(err.type === 'timeout', `expected type "timeout", got "${err.type}"`);
+  assert(
+    (err.message ?? '').includes('超时'),
+    `message should explain the timeout, got: ${err.message}`,
+  );
+  assert(elapsed < 3000, `should abort promptly, took ${elapsed}ms`);
+}
+
+async function test_external_signal_cancels_the_request() {
+  globalThis.fetch = mockHangingFetch() as unknown as typeof fetch;
+  const client = new AIClient(TEST_CONFIG);
+  const controller = new AbortController();
+
+  const pending = client.chat([{ role: 'user', content: 'hi' }], {
+    signal: controller.signal,
+    // Deliberately generous: the cancel must win, not the timeout.
+    timeoutMs: 30_000,
+  });
+  setTimeout(() => controller.abort(), 20);
+
+  let err: { type?: string; message?: string } | null = null;
+  try {
+    await pending;
+  } catch (e) {
+    err = e as { type?: string; message?: string };
+  }
+
+  assert(err !== null, 'cancelling must reject the pending request');
+  assert(err.type === 'aborted', `expected type "aborted", got "${err.type}"`);
+  assert(err.message === '已取消', `unexpected message: ${err.message}`);
+}
+
+async function test_pre_aborted_signal_rejects_immediately() {
+  globalThis.fetch = mockHangingFetch() as unknown as typeof fetch;
+  const client = new AIClient(TEST_CONFIG);
+  const controller = new AbortController();
+  // Aborted *before* the call: `addEventListener` will never replay it, so the
+  // client has to notice on its own.
+  controller.abort();
+
+  const started = Date.now();
+  const err = await captureRejection(client, {
+    signal: controller.signal,
+    timeoutMs: 30_000,
+  });
+  const elapsed = Date.now() - started;
+
+  assert(err !== null, 'an already-cancelled signal must not start a request');
+  assert(err.type === 'aborted', `expected type "aborted", got "${err.type}"`);
+  assert(elapsed < 2000, `should reject immediately, took ${elapsed}ms`);
+}
+
+async function test_fast_response_is_not_preempted_by_the_timer() {
+  const fast: AIResponse = {
+    id: 'chatcmpl-fast',
+    object: 'chat.completion',
+    created: 1700000000,
+    model: 'gpt-4o-mini',
+    choices: [
+      { index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' },
+    ],
+  };
+
+  globalThis.fetch = mockOk(fast) as unknown as typeof fetch;
+  const client = new AIClient(TEST_CONFIG);
+
+  // A timeout shorter than the mock's (zero) latency must not fire.
+  const response = await client.chat([{ role: 'user', content: 'hi' }], { timeoutMs: 5 });
+  assert(response.choices.length > 0, 'a fast response must still come back');
+  assert(response.id === 'chatcmpl-fast', 'the response must not be altered');
+
+  // Let the timer's deadline pass; a leaked timer would abort nothing here, but
+  // this also gives an unhandled rejection a chance to surface.
+  await new Promise((resolve) => setTimeout(resolve, 20));
+}
+
 // --- Run all ---
 
 async function main() {
@@ -345,6 +475,11 @@ async function main() {
     test_content_length_limit,
     test_api_key_sanitization,
     test_custom_base_url,
+    test_default_timeout_is_exported_and_sane,
+    test_stalled_request_times_out,
+    test_external_signal_cancels_the_request,
+    test_pre_aborted_signal_rejects_immediately,
+    test_fast_response_is_not_preempted_by_the_timer,
   ];
 
   let passed = 0;

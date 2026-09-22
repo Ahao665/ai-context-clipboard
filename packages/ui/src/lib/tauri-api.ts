@@ -110,3 +110,34 @@ export async function checkPrivacyAccepted(): Promise<boolean> {
 export async function acceptPrivacy(): Promise<void> {
   await setSetting('ai_privacy_accepted', 'true');
 }
+
+// --- Shortcut ---
+
+/** Settings key holding the panel-toggle binding. */
+export const SHORTCUT_SETTING_KEY = 'shortcut.panel';
+
+/** Fallback binding, mirroring `DEFAULT_SHORTCUT` in the Rust layer. */
+export const DEFAULT_SHORTCUT = 'Alt+Space';
+
+export async function loadShortcut(): Promise<string> {
+  const stored = await getSetting(SHORTCUT_SETTING_KEY);
+  return stored?.trim() ? stored : DEFAULT_SHORTCUT;
+}
+
+/**
+ * Rebind the panel shortcut. Rejects (with a message from the OS) when the
+ * combination is already owned by another program.
+ */
+export async function setShortcut(shortcut: string): Promise<string> {
+  return invoke('set_shortcut', { shortcut });
+}
+
+/**
+ * Release the panel shortcut without changing the stored value.
+ *
+ * Used while recording a new binding so that pressing the current combination
+ * is captured by the panel instead of toggling the window.
+ */
+export async function clearShortcut(): Promise<void> {
+  await invoke('clear_shortcut');
+}

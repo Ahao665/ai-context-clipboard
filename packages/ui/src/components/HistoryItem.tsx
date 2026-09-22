@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { CONTENT_TYPE_ICONS } from '@ai-clipboard/core';
 import type { ClipboardEntry } from '@ai-clipboard/types';
 import { entryPreview } from '../lib/entry-preview';
@@ -7,9 +8,15 @@ interface Props {
   isSelected: boolean;
   onClick: () => void;
   onTogglePin: (entry: ClipboardEntry) => void;
+  onDelete: (entry: ClipboardEntry) => void;
 }
 
-export function HistoryItem({ entry, isSelected, onClick, onTogglePin }: Props) {
+/** How long the delete button stays armed before it disarms itself. */
+const CONFIRM_TIMEOUT_MS = 3000;
+
+export function HistoryItem({ entry, isSelected, onClick, onTogglePin, onDelete }: Props) {
+  const [confirming, setConfirming] = useState(false);
+
   const icon = CONTENT_TYPE_ICONS[entry.content_type] ?? '📋';
   const time = new Date(entry.created_at).toLocaleString('zh-CN', {
     month: 'short',
@@ -19,6 +26,14 @@ export function HistoryItem({ entry, isSelected, onClick, onTogglePin }: Props) 
   });
   const pinned = Boolean(entry.is_pinned);
   const sensitive = entry.subtype === 'sensitive';
+
+  // Deleting is a single click away in a list the user is also clicking to
+  // open, so the button arms first and disarms itself if left alone.
+  useEffect(() => {
+    if (!confirming) return;
+    const timer = window.setTimeout(() => setConfirming(false), CONFIRM_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [confirming]);
 
   return (
     <div
@@ -49,6 +64,22 @@ export function HistoryItem({ entry, isSelected, onClick, onTogglePin }: Props) 
         }}
       >
         {pinned ? '📌' : '📍'}
+      </button>
+      <button
+        type="button"
+        className={`history-delete ${confirming ? 'confirming' : ''}`}
+        title={confirming ? '再点一次删除这条记录' : '删除这条记录'}
+        aria-label={confirming ? '确认删除' : '删除'}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (confirming) {
+            onDelete(entry);
+          } else {
+            setConfirming(true);
+          }
+        }}
+      >
+        {confirming ? '删除?' : '✕'}
       </button>
     </div>
   );

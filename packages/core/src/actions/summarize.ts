@@ -1,5 +1,5 @@
 import type { ActionResult } from '@ai-clipboard/types';
-import { AIClient } from '../ai/client';
+import { AIClient, type ChatOptions } from '../ai/client';
 import { executeAction } from './shared';
 
 export function buildSummarizePrompt(content: string): string {
@@ -9,6 +9,7 @@ export function buildSummarizePrompt(content: string): string {
 export async function executeSummarize(
   client: AIClient,
   content: string,
+  options?: ChatOptions,
 ): Promise<ActionResult> {
-  return executeAction(client, content, buildSummarizePrompt, 'text.summarize', '内容为空，无法总结');
+  return executeAction(client, content, buildSummarizePrompt, 'text.summarize', '内容为空，无法总结', options);
 }

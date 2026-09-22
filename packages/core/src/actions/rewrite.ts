@@ -1,5 +1,5 @@
 import type { ActionResult } from '@ai-clipboard/types';
-import { AIClient } from '../ai/client';
+import { AIClient, type ChatOptions } from '../ai/client';
 import { executeAction } from './shared';
 
 export function buildRewritePrompt(content: string): string {
@@ -9,6 +9,7 @@ export function buildRewritePrompt(content: string): string {
 export async function executeRewrite(
   client: AIClient,
   content: string,
+  options?: ChatOptions,
 ): Promise<ActionResult> {
-  return executeAction(client, content, buildRewritePrompt, 'text.polish', '内容为空，无法润色');
+  return executeAction(client, content, buildRewritePrompt, 'text.polish', '内容为空，无法润色', options);
 }

@@ -2,14 +2,14 @@ import { useCallback } from 'react';
 import type { ClipboardEntry } from '@ai-clipboard/types';
 import { HistoryItem } from './HistoryItem';
 import { useClipboardStore } from '../stores/clipboard-store';
-import { togglePin } from '../lib/tauri-api';
+import { deleteEntry, togglePin } from '../lib/tauri-api';
 
 interface Props {
   onSelect: (id: string) => void;
 }
 
 export function HistoryList({ onSelect }: Props) {
-  const { entries, selectedId, loading, setPinned } = useClipboardStore();
+  const { entries, selectedId, loading, setPinned, removeEntry } = useClipboardStore();
 
   const handleTogglePin = useCallback(
     async (entry: ClipboardEntry) => {
@@ -25,6 +25,21 @@ export function HistoryList({ onSelect }: Props) {
       }
     },
     [setPinned],
+  );
+
+  const handleDelete = useCallback(
+    async (entry: ClipboardEntry) => {
+      // Optimistic: drop the row, and put the whole list back if the backend
+      // refuses — otherwise the UI would claim a record is gone when it is not.
+      const snapshot = useClipboardStore.getState().entries;
+      removeEntry(entry.id);
+      try {
+        await deleteEntry(entry.id);
+      } catch {
+        useClipboardStore.getState().setEntries(snapshot);
+      }
+    },
+    [removeEntry],
   );
 
   if (loading) {
@@ -56,6 +71,7 @@ export function HistoryList({ onSelect }: Props) {
               isSelected={entry.id === selectedId}
               onClick={() => onSelect(entry.id)}
               onTogglePin={handleTogglePin}
+              onDelete={handleDelete}
             />
           ))}
           <div className="history-group-title">最近</div>
@@ -68,6 +84,7 @@ export function HistoryList({ onSelect }: Props) {
           isSelected={entry.id === selectedId}
           onClick={() => onSelect(entry.id)}
           onTogglePin={handleTogglePin}
+          onDelete={handleDelete}
         />
       ))}
     </div>

@@ -27,6 +27,14 @@ const sortEntries = (entries: ClipboardEntry[]): ClipboardEntry[] =>
     return pinDiff !== 0 ? pinDiff : b.created_at - a.created_at;
   });
 
+/** A transient message shown over the panel (skipped capture, truncation, …). */
+export interface AppNotice {
+  /** Bumped on every show so the auto-dismiss timer restarts. */
+  id: number;
+  kind: 'info' | 'warn';
+  text: string;
+}
+
 interface ClipboardState {
   entries: ClipboardEntry[];
   loading: boolean;
@@ -38,6 +46,7 @@ interface ClipboardState {
   searchResults: PaletteComposeResult | null;
   isSearching: boolean;
   paletteNonce: number;
+  notice: AppNotice | null;
   setEntries: (entries: ClipboardEntry[]) => void;
   addEntry: (entry: ClipboardEntry) => void;
   removeEntry: (id: string) => void;
@@ -49,6 +58,8 @@ interface ClipboardState {
   setIsSearching: (isSearching: boolean) => void;
   moveSelection: (delta: number) => void;
   resetPalette: () => void;
+  showNotice: (text: string, kind?: AppNotice['kind']) => void;
+  dismissNotice: () => void;
 }
 
 export const useClipboardStore = create<ClipboardState>((set) => {
@@ -80,6 +91,7 @@ export const useClipboardStore = create<ClipboardState>((set) => {
     searchResults: null,
     isSearching: false,
     paletteNonce: 0,
+    notice: null,
 
     setEntries: (entries) =>
       set((s) => ({ entries, ...syncSelection(entries, s.selectedIndex, s.searchResults) })),
@@ -143,5 +155,8 @@ export const useClipboardStore = create<ClipboardState>((set) => {
         selectedId: null,
         paletteNonce: s.paletteNonce + 1,
       })),
+    showNotice: (text, kind = 'info') =>
+      set((s) => ({ notice: { id: (s.notice?.id ?? 0) + 1, kind, text } })),
+    dismissNotice: () => set({ notice: null }),
   };
 });
