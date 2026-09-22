@@ -4,6 +4,24 @@ All notable changes to AI Context Clipboard are documented in this file.
 
 ## [Unreleased]
 
+### Fixes
+
+- **图片文件现在真的会被回收。** 这是上一版引入的 bug：`purge_deleted` 改成返回
+  `PurgeOutcome` 之后，启动路径那处调用仍然写着 `let _ = db.purge_deleted();`，
+  **把 `orphaned_files` 丢掉了**；而每条复制走的 `save_entry` 只做软删，从不删文件。
+  后果是历史记录看起来被上限管住了，`images/` 却把每一次截图都留着 —— 复制得越多、
+  占得越大，而且没有任何地方会去清它。
+
+  现在「清理行 + 回收文件」收成一个 `purge_and_reclaim(db, images_dir)`，三个调用点
+  （设置页的清理按钮、启动时、每次保存时的裁剪）都走它，行为不会再分叉。文件删除是
+  尽力而为：行已经删了，某个文件被看图软件锁住不该让整次清理变成报错。VACUUM 没有
+  放进去 —— 它要重写整个数据库文件，只该出现在启动和显式清理这两条冷路径上，不该跟着
+  每次复制跑。
+
+- **`msvc-env.sh` 不再误报。** 它检查链接器是否被 Git Bash 的 `/usr/bin/link.exe`
+  遮蔽，但 Git Bash 的 `command -v` 返回的路径**不带 `.exe`**，所以匹配不上，环境明明
+  是对的却每次开 shell 都警告一次。
+
 ### Internal
 
 - **剪贴板写入的簿记收成一处。** `write_clipboard_text` 和 `write_clipboard_image`
@@ -25,7 +43,7 @@ All notable changes to AI Context Clipboard are documented in this file.
   匹配很容易误伤（为了让 `clipboard::image` 跑起来而写成 `clipboard::`，会把本来要排除的
   `clipboard::writer` 一起放回来）。现在跑全部、只跳过九个需要桌面会话的用例。
 
-  测试 282 → **286**（Rust 96 → 100）。CI 上跑 91 个。
+  测试 282 → **288**（Rust 96 → 102）。CI 上跑 93 个。
 
 ## [0.3.3] - 2026-09-22
 

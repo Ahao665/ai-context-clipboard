@@ -39,7 +39,9 @@ export INCLUDE="$(cygpath -w "$MSVC_ROOT/include");$(cygpath -w "$SDK_ROOT/Inclu
 export CARGO_INCREMENTAL=0
 
 # Fail loudly rather than silently building against the wrong linker.
+# Git Bash's `command -v` reports the MSVC binary without its `.exe` suffix,
+# so both spellings have to match or a correct setup warns on every shell.
 case "$(command -v link)" in
-  */Hostx64/x64/link.exe) ;;
+  */Hostx64/x64/link | */Hostx64/x64/link.exe) ;;
   *) echo "msvc-env: unexpected link.exe on PATH: $(command -v link)" >&2 ;;
 esac

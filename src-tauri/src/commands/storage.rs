@@ -1,23 +1,38 @@
+use crate::commands::maintenance::purge_and_reclaim;
 use crate::storage::entries::ClipboardEntry;
 use crate::storage::Database;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 /// Default cap when `ui.max_history` is unset or unparseable.
 const DEFAULT_MAX_HISTORY: i64 = 500;
 
 #[tauri::command]
-pub fn save_entry(db: State<'_, Database>, entry: ClipboardEntry) -> Result<(), String> {
+pub fn save_entry(
+    app: AppHandle,
+    db: State<'_, Database>,
+    entry: ClipboardEntry,
+) -> Result<(), String> {
     db.save_entry(&entry).map_err(|e| e.to_string())?;
 
-    // Keep the table bounded as entries arrive. Trimming is best-effort: a failure
-    // here must not fail the save, since the entry itself was persisted fine.
+    // Keep the table — and the images directory — bounded as entries arrive.
+    // Best-effort: a failure here must not fail the save, since the entry itself
+    // was persisted fine.
     let max_history = db
         .get_setting("ui.max_history")
         .ok()
         .flatten()
         .and_then(|v| v.parse::<i64>().ok())
         .unwrap_or(DEFAULT_MAX_HISTORY);
-    let _ = db.enforce_history_cap(max_history);
+
+    // The purge only runs when the cap actually bit, which is at most once per
+    // copy. Doing it here rather than only at startup is what stops a
+    // long-running instance from accumulating every screenshot since it launched:
+    // trimming alone only soft-deletes, so without this the "cap" bounds the
+    // visible list while the disk keeps growing.
+    if db.enforce_history_cap(max_history).unwrap_or(0) > 0 {
+        let dir = app.path().app_data_dir().map(|d| d.join("images")).ok();
+        let _ = purge_and_reclaim(&db, dir.as_deref());
+    }
 
     Ok(())
 }

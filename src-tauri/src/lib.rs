@@ -32,17 +32,26 @@ pub fn run() {
             let images_dir = app_dir.join("images");
             let db = Database::new(app_dir).expect("failed to initialize database");
 
-            // Startup housekeeping: drop previously soft-deleted rows and trim
-            // history to the configured cap. Best-effort — a failure here must
-            // not stop the app from starting, so errors are intentionally ignored.
+            // Startup housekeeping. Order matters: trim to the cap first, then
+            // purge, so rows this pass trimmed are physically removed and their
+            // bitmaps reclaimed in the same run rather than waiting for the next
+            // launch. Best-effort throughout — a failure here must not stop the
+            // app from starting, so errors are intentionally ignored.
             let max_history: i64 = db
                 .get_setting("ui.max_history")
                 .ok()
                 .flatten()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(500);
-            let _ = db.purge_deleted();
             let _ = db.enforce_history_cap(max_history);
+            match commands::maintenance::purge_and_reclaim(&db, Some(&images_dir)) {
+                Ok(outcome) if outcome.rows > 0 => {
+                    // Only worth the rewrite when something actually went.
+                    let _ = db.vacuum();
+                }
+                Ok(_) => {}
+                Err(err) => eprintln!("[startup] 清理历史失败：{err}"),
+            }
 
             let stored_shortcut = db
                 .get_setting(shortcut::manager::SHORTCUT_SETTING_KEY)
