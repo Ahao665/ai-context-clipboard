@@ -67,6 +67,23 @@ export async function setClipboard(content: string): Promise<void> {
   await invoke('set_clipboard', { content });
 }
 
+/**
+ * An image entry's bitmap as a `data:` URL, or `null` when it has none.
+ *
+ * `thumbnail` picks the small companion written at capture time — list rows ask
+ * for it, the detail view asks for the original. Both live on disk, so this
+ * crosses the IPC boundary with a few hundred KB of base64; callers should
+ * fetch lazily rather than for every row.
+ */
+export async function getEntryImage(id: string, thumbnail: boolean): Promise<string | null> {
+  return invoke('get_entry_image', { id, thumbnail });
+}
+
+/** Put an image entry's bitmap back on the system clipboard (Quick Paste). */
+export async function setClipboardImage(id: string): Promise<void> {
+  await invoke('set_clipboard_image', { id });
+}
+
 // --- Settings ---
 
 export async function getSetting(key: string): Promise<string | null> {

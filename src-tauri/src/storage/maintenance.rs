@@ -2,6 +2,19 @@ use crate::storage::db::Database;
 use crate::storage::entries::ClipboardEntry;
 use rusqlite::params;
 
+/// What a [`Database::purge_deleted`] run reclaimed.
+pub struct PurgeOutcome {
+    /// Entry rows physically removed.
+    pub rows: usize,
+    /// `content_ref` file names that no surviving row refers to any more.
+    ///
+    /// The database deliberately does not touch the filesystem — it only reports
+    /// what became unreachable, and the command layer deletes the files. Keeping
+    /// the two apart is what lets every storage test run against a temp directory
+    /// with no images in it.
+    pub orphaned_files: Vec<String>,
+}
+
 impl Database {
     /// Number of live (non-deleted) entries.
     pub fn count_entries(&self) -> rusqlite::Result<i64> {
@@ -34,9 +47,34 @@ impl Database {
     /// Returns the number of entry rows purged. Note this does NOT VACUUM —
     /// reclaiming file space requires exclusive access and can block for a long
     /// time, so it is exposed separately via [`Database::vacuum`].
-    pub fn purge_deleted(&self) -> rusqlite::Result<usize> {
+    pub fn purge_deleted(&self) -> rusqlite::Result<PurgeOutcome> {
         let mut conn = self.conn.lock().unwrap();
         let tx = conn.transaction()?;
+
+        // Collected before the rows disappear. The `NOT IN` clause is the
+        // important part: a file is named after its content hash, and
+        // `find_by_hash` only looks at live rows — so copying a picture, deleting
+        // it and copying the same picture again leaves a live row and a dead one
+        // pointing at the *same* file. Deleting the file along with the dead row
+        // would take out the live entry's image too.
+        let orphaned_files = {
+            let mut stmt = tx.prepare(
+                "SELECT DISTINCT content_ref FROM clipboard_entries
+                 WHERE is_deleted = 1
+                   AND content_storage = 'file'
+                   AND content_ref IS NOT NULL
+                   AND content_ref NOT IN (
+                       SELECT content_ref FROM clipboard_entries
+                       WHERE is_deleted = 0 AND content_ref IS NOT NULL
+                   )",
+            )?;
+            let names = stmt.query_map([], |row| row.get::<_, String>(0))?;
+            let mut collected = Vec::new();
+            for name in names {
+                collected.push(name?);
+            }
+            collected
+        };
 
         // Drop FTS rows whose entry is gone or soft-deleted.
         tx.execute(
@@ -48,7 +86,10 @@ impl Database {
         )?;
         let purged = tx.execute("DELETE FROM clipboard_entries WHERE is_deleted = 1", [])?;
         tx.commit()?;
-        Ok(purged)
+        Ok(PurgeOutcome {
+            rows: purged,
+            orphaned_files,
+        })
     }
 
     /// Reclaim unused file space. Must not run inside a transaction, and needs
@@ -144,6 +185,27 @@ mod tests {
         }
     }
 
+    /// An image entry: bytes on disk, so it carries a `content_ref`.
+    fn sample_image(id: &str, hash: &str, created_at: i64) -> ClipboardEntry {
+        ClipboardEntry {
+            id: id.into(),
+            content_hash: hash.into(),
+            content_type: "image".into(),
+            subtype: Some("bitmap".into()),
+            content: None,
+            content_preview: Some("图片 2×2".into()),
+            content_storage: "file".into(),
+            content_ref: Some(format!("{hash}.bmp")),
+            content_size: 54,
+            source_app: Some("test".into()),
+            source_window: None,
+            is_deleted: false,
+            is_pinned: false,
+            created_at,
+            updated_at: created_at,
+        }
+    }
+
     #[test]
     fn test_count_entries_excludes_deleted() {
         let db = test_db();
@@ -191,7 +253,10 @@ mod tests {
         db.delete_entry("p2").unwrap();
 
         let purged = db.purge_deleted().unwrap();
-        assert!(purged >= 1, "purge should report at least the soft-deleted row");
+        assert!(
+            purged.rows >= 1,
+            "purge should report at least the soft-deleted row"
+        );
         assert_eq!(db.count_entries().unwrap(), 1, "only the live entry remains");
 
         // Scoped so the connection guard is released before calling back into `db`
@@ -289,5 +354,85 @@ mod tests {
 
         db.delete_entry("l2").unwrap();
         assert_eq!(db.latest_entry().unwrap().unwrap().id, "l1");
+    }
+
+    // --- image file reclamation ----------------------------------------------
+
+    #[test]
+    fn test_purge_reports_files_of_deleted_images() {
+        let db = test_db();
+        db.save_entry(&sample_image("img1", "aaaa", 1000)).unwrap();
+        db.delete_entry("img1").unwrap();
+
+        let purged = db.purge_deleted().unwrap();
+        assert_eq!(purged.orphaned_files, vec!["aaaa.bmp".to_string()]);
+    }
+
+    #[test]
+    fn test_purge_ignores_inline_entries() {
+        let db = test_db();
+        // Text entries are stored inline, so they own no file.
+        db.save_entry(&sample("t1", "just text", 1000)).unwrap();
+        db.delete_entry("t1").unwrap();
+
+        assert!(db.purge_deleted().unwrap().orphaned_files.is_empty());
+    }
+
+    #[test]
+    fn test_purge_keeps_a_file_a_live_entry_still_needs() {
+        let db = test_db();
+        // The same picture copied twice: `find_by_hash` ignores deleted rows, so
+        // copying, deleting and copying again really does produce two rows with
+        // one shared file name. Purging the dead one must not remove the file.
+        db.save_entry(&sample_image("old", "shared", 1000)).unwrap();
+        db.delete_entry("old").unwrap();
+        db.save_entry(&sample_image("new", "shared", 2000)).unwrap();
+
+        let purged = db.purge_deleted().unwrap();
+        assert_eq!(purged.rows, 1, "the soft-deleted row is gone");
+        assert!(
+            purged.orphaned_files.is_empty(),
+            "a file the live entry still points at must not be reported for deletion"
+        );
+        assert_eq!(db.count_entries().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_purge_reports_each_file_once() {
+        let db = test_db();
+        db.save_entry(&sample_image("a", "dup", 1000)).unwrap();
+        db.save_entry(&sample_image("b", "dup", 2000)).unwrap();
+        db.delete_entry("a").unwrap();
+        db.delete_entry("b").unwrap();
+
+        // Two dead rows, one file. Deleting it twice is harmless but sloppy.
+        assert_eq!(db.purge_deleted().unwrap().orphaned_files.len(), 1);
+    }
+
+    #[test]
+    fn test_clear_history_then_purge_reclaims_the_files() {
+        let db = test_db();
+        db.save_entry(&sample_image("img", "cccc", 1000)).unwrap();
+        db.clear_history().unwrap();
+
+        // Clearing only soft-deletes, so nothing is unreachable yet. The file
+        // surfaces on purge, which is the only physically destructive step —
+        // which is exactly what makes "clear" recoverable and "purge" not.
+        let purged = db.purge_deleted().unwrap();
+        assert_eq!(purged.rows, 1);
+        assert_eq!(purged.orphaned_files, vec!["cccc.bmp".to_string()]);
+    }
+
+    #[test]
+    fn test_purge_with_nothing_deleted_reports_nothing() {
+        let db = test_db();
+        db.save_entry(&sample_image("img", "dddd", 1000)).unwrap();
+
+        let purged = db.purge_deleted().unwrap();
+        assert_eq!(purged.rows, 0);
+        assert!(
+            purged.orphaned_files.is_empty(),
+            "a live entry's file must never be reported as orphaned"
+        );
     }
 }

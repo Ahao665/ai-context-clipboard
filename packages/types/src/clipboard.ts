@@ -1,4 +1,12 @@
-export type ContentType = 'text' | 'code' | 'url' | 'json' | 'email' | 'unknown';
+export type ContentType =
+  | 'text'
+  | 'code'
+  | 'url'
+  | 'json'
+  | 'email'
+  /** A captured bitmap. Its bytes live on disk; `content_ref` names the file. */
+  | 'image'
+  | 'unknown';
 export type ContentStorage = 'inline' | 'file' | 'compressed';
 
 export interface ClipboardEntry {

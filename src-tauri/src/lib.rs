@@ -12,7 +12,6 @@ use tauri::Manager;
 
 pub fn run() {
     let (tx, rx) = mpsc::channel::<ClipboardContent>();
-    clipboard::start_clipboard_watcher(tx);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -23,11 +22,14 @@ pub fn run() {
                 })
                 .build(),
         )
-        .setup(|app| {
+        .setup(move |app| {
             let app_dir = app
                 .path()
                 .app_data_dir()
                 .expect("failed to get app data dir");
+            // Captured bitmaps are written here; only their file names go into
+            // SQLite, so the database stays small.
+            let images_dir = app_dir.join("images");
             let db = Database::new(app_dir).expect("failed to initialize database");
 
             // Startup housekeeping: drop previously soft-deleted rows and trim
@@ -98,6 +100,11 @@ pub fn run() {
                 }
             }
 
+            // Started here rather than in `run` because the watcher has to know
+            // where to put captured images, and that path is only known once the
+            // app data directory is.
+            clipboard::start_clipboard_watcher(tx, images_dir);
+
             let app_handle = app.handle().clone();
             std::thread::spawn(move || {
                 while let Ok(content) = rx.recv() {
@@ -129,6 +136,8 @@ pub fn run() {
             commands::autostart::get_autostart,
             commands::autostart::set_autostart,
             commands::clipboard::set_clipboard,
+            commands::image::get_entry_image,
+            commands::image::set_clipboard_image,
             commands::maintenance::count_entries,
             commands::maintenance::clear_history,
             commands::maintenance::purge_deleted,

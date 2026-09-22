@@ -1,4 +1,5 @@
 use sha2::{Digest, Sha256};
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -27,6 +28,23 @@ const CLIPBOARD_RETRIES: u32 = 8;
 #[cfg(target_os = "windows")]
 const RETRY_DELAY: Duration = Duration::from_millis(25);
 
+/// Where a captured image lives on disk, plus what the UI needs to describe it.
+///
+/// Only metadata crosses the IPC boundary; the BMP bytes are fetched on demand
+/// by the `get_entry_image` command. Sending megabytes of base64 through the
+/// clipboard event would stall the panel on every screenshot.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ImageCapture {
+    /// File name inside the images directory, e.g. `<sha256>.bmp`.
+    pub file_name: String,
+    /// Downscaled companion used by list rows.
+    pub thumbnail_name: String,
+    pub width: u32,
+    pub height: u32,
+    /// Byte length of the stored full-size BMP.
+    pub byte_len: usize,
+}
+
 /// A single clipboard capture, as delivered to the app.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ClipboardContent {
@@ -40,6 +58,8 @@ pub struct ClipboardContent {
     pub source_app: Option<String>,
     /// Title of the foreground window at capture time.
     pub source_window: Option<String>,
+    /// Set when the clipboard held a bitmap rather than text.
+    pub image: Option<ImageCapture>,
 }
 
 impl ClipboardContent {
@@ -83,11 +103,33 @@ impl ClipboardContent {
             original_len,
             source_app,
             source_window,
+            image: None,
+        }
+    }
+
+    /// Build from an image capture.
+    ///
+    /// `content_hash` is the hash of the stored BMP bytes, so re-copying the
+    /// same picture dedupes exactly the way repeated text copies do.
+    pub fn with_image(
+        image: ImageCapture,
+        content_hash: String,
+        source_app: Option<String>,
+        source_window: Option<String>,
+    ) -> Self {
+        Self {
+            text: None,
+            content_hash,
+            truncated: false,
+            original_len: 0,
+            source_app,
+            source_window,
+            image: Some(image),
         }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.text.as_deref().map_or(true, |t| t.is_empty())
+        self.image.is_none() && self.text.as_deref().map_or(true, |t| t.is_empty())
     }
 }
 
@@ -98,7 +140,7 @@ impl ClipboardContent {
 /// polled and two copies in quick succession cannot be missed. If the listener
 /// cannot be created the function silently degrades to the older polling loop —
 /// a slower watcher beats no watcher.
-pub fn start_clipboard_watcher(tx: mpsc::Sender<ClipboardContent>) {
+pub fn start_clipboard_watcher(tx: mpsc::Sender<ClipboardContent>, images_dir: PathBuf) {
     let (signal_tx, signal_rx) = mpsc::channel::<()>();
     let event_driven = start_listener(signal_tx).is_ok();
 
@@ -114,7 +156,7 @@ pub fn start_clipboard_watcher(tx: mpsc::Sender<ClipboardContent>) {
                 thread::sleep(FALLBACK_POLL);
             }
 
-            let content = read_clipboard();
+            let content = read_clipboard(&images_dir);
             if !content.is_empty() && content.content_hash != last_hash {
                 last_hash = content.content_hash.clone();
                 let _ = tx.send(content);
@@ -124,16 +166,156 @@ pub fn start_clipboard_watcher(tx: mpsc::Sender<ClipboardContent>) {
 }
 
 /// Read the clipboard and attach the foreground app it came from.
-fn read_clipboard() -> ClipboardContent {
+///
+/// Text wins when both flavours are present: a copy out of a browser or an
+/// editor usually offers a bitmap alongside the text, and the text is what the
+/// user meant.
+fn read_clipboard(images_dir: &Path) -> ClipboardContent {
     let text = get_clipboard_text();
 
-    // Skip the window/process lookup when there is nothing to store.
     if text.as_deref().map_or(true, |t| t.is_empty()) {
+        if let Some(content) = read_clipboard_image(images_dir) {
+            return content;
+        }
+        // Nothing storable — empty, or an image format that cannot be decoded.
+        // `new` yields an empty capture, which the watcher drops.
         return ClipboardContent::new(text);
     }
 
+    // Skip the window/process lookup when there is nothing to store.
     let (source_app, source_window) = foreground_app();
     ClipboardContent::with_source(text, source_app, source_window)
+}
+
+/// Read a bitmap off the clipboard, write it to `images_dir`, and describe it.
+///
+/// Fails closed: any problem (an unsupported format, an unwritable directory)
+/// returns `None`, which leaves the capture path behaving exactly as it did
+/// before image support existed. Losing an image is acceptable; breaking text
+/// capture is not.
+#[cfg(target_os = "windows")]
+fn read_clipboard_image(images_dir: &Path) -> Option<ClipboardContent> {
+    let dib = read_clipboard_dib()?;
+
+    let encoded = match crate::clipboard::image::encode_capture(&dib) {
+        Ok(encoded) => encoded,
+        Err(err) => {
+            // e.g. an 8-bit or RLE-compressed bitmap. Say so rather than leaving
+            // the user with a copy that appears to do nothing at all.
+            eprintln!("[clipboard] 跳过图片：{err}");
+            return None;
+        }
+    };
+
+    let hash = hash_bytes(&encoded.full);
+    let file_name = format!("{hash}.bmp");
+    let thumbnail_name = format!("{hash}.thumb.bmp");
+
+    if let Err(err) = std::fs::create_dir_all(images_dir) {
+        eprintln!("[clipboard] 创建图片目录失败：{err}");
+        return None;
+    }
+    if let Err(err) = std::fs::write(images_dir.join(&file_name), &encoded.full) {
+        eprintln!("[clipboard] 写入图片失败：{err}");
+        return None;
+    }
+    // The thumbnail is a convenience; losing it only costs list-row rendering.
+    let _ = std::fs::write(images_dir.join(&thumbnail_name), &encoded.thumbnail);
+
+    let (source_app, source_window) = foreground_app();
+    Some(ClipboardContent::with_image(
+        ImageCapture {
+            file_name,
+            thumbnail_name,
+            width: encoded.width,
+            height: encoded.height,
+            byte_len: encoded.full.len(),
+        },
+        hash,
+        source_app,
+        source_window,
+    ))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn read_clipboard_image(_images_dir: &Path) -> Option<ClipboardContent> {
+    None
+}
+
+/// Raw `CF_DIB` bytes, retrying while another process holds the clipboard.
+///
+/// Also the read half of the image copy-back round-trip test, hence the wider
+/// visibility than the rest of this module's helpers.
+#[cfg(target_os = "windows")]
+pub(crate) fn read_clipboard_dib() -> Option<Vec<u8>> {
+    use windows::Win32::Foundation::HGLOBAL;
+    use windows::Win32::System::DataExchange::{CloseClipboard, GetClipboardData, OpenClipboard};
+    use windows::Win32::System::Memory::{GlobalLock, GlobalSize, GlobalUnlock};
+
+    // CF_DIB = 8, CF_DIBV5 = 17. Neither is re-exported by the `windows` crate's
+    // DataExchange module in this version, so the literals are used directly.
+    const CF_DIB: u32 = 8;
+    const CF_DIBV5: u32 = 17;
+
+    for attempt in 0..CLIPBOARD_RETRIES {
+        unsafe {
+            if OpenClipboard(None).is_err() {
+                if attempt + 1 < CLIPBOARD_RETRIES {
+                    thread::sleep(RETRY_DELAY);
+                }
+                continue;
+            }
+
+            let mut found = None;
+            // V5 is tried first: when an app offers both, the newer header
+            // carries the same pixels plus colour-space information.
+            for format in [CF_DIBV5, CF_DIB] {
+                let Ok(handle) = GetClipboardData(format) else {
+                    continue;
+                };
+                if handle.is_invalid() {
+                    continue;
+                }
+
+                let hg = HGLOBAL(handle.0);
+                let ptr = GlobalLock(hg);
+                if ptr.is_null() {
+                    continue;
+                }
+
+                // The size comes from the allocator, not from the header —
+                // `biSizeImage` is frequently zero on clipboard bitmaps.
+                let size = GlobalSize(hg);
+                if size > 0 {
+                    let bytes = std::slice::from_raw_parts(ptr as *const u8, size);
+                    found = Some(bytes.to_vec());
+                }
+                let _ = GlobalUnlock(hg);
+
+                if found.is_some() {
+                    break;
+                }
+            }
+
+            let _ = CloseClipboard();
+            // The clipboard opened cleanly, so a retry would not change the
+            // answer: either a bitmap was there or there was none.
+            return found;
+        }
+    }
+    None
+}
+
+#[cfg(not(target_os = "windows"))]
+fn read_clipboard_dib() -> Option<Vec<u8>> {
+    None
+}
+
+/// SHA-256 of arbitrary bytes, hex-encoded.
+fn hash_bytes(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format!("{:x}", hasher.finalize())
 }
 
 /// Read the clipboard text, retrying while another process holds the clipboard.

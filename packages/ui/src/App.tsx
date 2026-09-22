@@ -6,11 +6,12 @@ import { CommandPalette } from './components/CommandPalette';
 import { ActionBar } from './components/ActionBar';
 import type { ActionBarAction } from './components/ActionBar';
 import { AIResultView } from './components/AIResultView';
+import { EntryImage } from './components/EntryImage';
 import { PrivacyDialog } from './components/PrivacyDialog';
 import { SettingsPanel } from './components/SettingsPanel';
 import { useClipboard } from './hooks/useClipboard';
 import { useAI } from './hooks/useAI';
-import { deleteEntry, setClipboard } from './lib/tauri-api';
+import { deleteEntry, setClipboard, setClipboardImage } from './lib/tauri-api';
 import { useClipboardStore } from './stores/clipboard-store';
 import { useSettingsStore } from './stores/settings-store';
 import './App.css';
@@ -30,7 +31,7 @@ export default function App() {
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const { entries, notice, dismissNotice } = useClipboardStore();
+  const { entries, notice, dismissNotice, showNotice } = useClipboardStore();
   const { privacyAccepted, privacyChecked, checkPrivacy, acceptPrivacyAction } = useSettingsStore();
   const {
     state,
@@ -80,6 +81,9 @@ export default function App() {
   }, [selectedId]);
 
   const selectedEntry = entries.find((e) => e.id === selectedId);
+  // A bitmap has no text to send anywhere, so the AI actions are not merely
+  // disabled here — they are replaced by an explanation of why.
+  const selectedIsImage = selectedEntry?.content_type === 'image';
 
   const withPrivacy = useCallback(
     (label: string, fn: () => void) => {
@@ -148,14 +152,34 @@ export default function App() {
   );
 
   const handleQuickPaste = useCallback(async (entry: ClipboardEntry) => {
-    if (!entry.content) return;
-    await setClipboard(entry.content);
-    void getCurrentWindow().hide();
-  }, []);
+    try {
+      if (entry.content_type === 'image') {
+        await setClipboardImage(entry.id);
+      } else {
+        if (!entry.content) return;
+        await setClipboard(entry.content);
+      }
+      void getCurrentWindow().hide();
+    } catch (err) {
+      // Failing silently would look like the app ignored the keypress; the
+      // usual cause is a capture whose file has since been cleaned up.
+      showNotice(typeof err === 'string' ? err : '复制失败', 'warn');
+    }
+  }, [showNotice]);
 
   const hideWindow = useCallback(() => {
     void getCurrentWindow().hide();
   }, []);
+
+  const handleCopyImage = useCallback(async () => {
+    if (!selectedEntry) return;
+    try {
+      await setClipboardImage(selectedEntry.id);
+      showNotice('图片已复制到剪贴板');
+    } catch (err) {
+      showNotice(typeof err === 'string' ? err : '复制失败', 'warn');
+    }
+  }, [selectedEntry, showNotice]);
 
   const handleDeleteSelected = useCallback(async () => {
     if (!selectedEntry) return;
@@ -247,11 +271,34 @@ export default function App() {
           </header>
           <main className="app-main">
             <div className="detail-view">
-              <div className="detail-content">
-                {selectedEntry.content ?? '(空)'}
-              </div>
-              <ActionBar actions={actions} disabled={state.loading} />
-              <AIResultView result={state.result} loading={state.loading} onCancel={cancel} />
+              {selectedIsImage ? (
+                <>
+                  <EntryImage entry={selectedEntry} />
+                  <div className="action-bar">
+                    <button
+                      type="button"
+                      className="action-btn"
+                      onClick={() => void handleCopyImage()}
+                      title="把这张图片放回剪贴板，可直接粘贴到其他程序"
+                    >
+                      复制图片
+                    </button>
+                  </div>
+                  <p className="detail-hint">图片没有文字内容，AI 动作对它不适用</p>
+                </>
+              ) : (
+                <>
+                  <div className="detail-content">
+                    {selectedEntry.content ?? '(空)'}
+                  </div>
+                  <ActionBar actions={actions} disabled={state.loading} />
+                  <AIResultView
+                    result={state.result}
+                    loading={state.loading}
+                    onCancel={cancel}
+                  />
+                </>
+              )}
             </div>
           </main>
         </>

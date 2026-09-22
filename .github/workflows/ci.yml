@@ -33,5 +33,8 @@ jobs:
         # Filters go after `--` because cargo itself accepts only one TESTNAME.
         # NOTE: the value MUST be quoted — a trailing "::" in a plain scalar is
         # parsed as a mapping key indicator and makes the whole file invalid.
-        run: "cargo test --lib -- storage:: clipboard::watcher:: shortcut:: commands::autostart::"
+        # `clipboard::writer` is deliberately left out: its round-trip tests need
+        # a real desktop session and hang (rather than fail) without one.
+        # `clipboard::image` is pure byte manipulation, so it is safe here.
+        run: "cargo test --lib -- storage:: clipboard::watcher:: clipboard::image:: shortcut:: commands::"
 

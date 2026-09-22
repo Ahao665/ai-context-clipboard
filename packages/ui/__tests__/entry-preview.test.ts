@@ -2,6 +2,8 @@ import {
   entryPreview,
   entryPreviewShort,
   entryHasContent,
+  imagePreview,
+  formatBytes,
   EMPTY_PREVIEW,
 } from '../src/lib/entry-preview';
 
@@ -69,6 +71,48 @@ function test_has_content_false_for_whitespace() {
   assert(!entryHasContent({ content: '   \n ' }), 'whitespace-only content is not usable');
 }
 
+function test_has_content_false_for_image_entry() {
+  // Image entries carry no text at all, which is what gates the AI actions.
+  assert(!entryHasContent({ content: null }), 'an image entry has nothing to send to the AI');
+}
+
+function test_image_preview_shows_dimensions() {
+  const out = imagePreview(1920, 1080);
+  assert(out === '图片 1920×1080', `expected dimensions in the preview, got "${out}"`);
+}
+
+function test_image_preview_keeps_small_sizes_verbatim() {
+  const out = imagePreview(16, 16);
+  assert(out === '图片 16×16', `small bitmaps need no special casing, got "${out}"`);
+}
+
+function test_format_bytes_below_one_kilobyte() {
+  assert(formatBytes(0) === '0 B', `0 bytes, got "${formatBytes(0)}"`);
+  assert(formatBytes(512) === '512 B', `512 bytes, got "${formatBytes(512)}"`);
+}
+
+function test_format_bytes_one_decimal_below_ten() {
+  assert(formatBytes(1024) === '1.0 KB', `1024 bytes, got "${formatBytes(1024)}"`);
+  assert(formatBytes(1536) === '1.5 KB', `1536 bytes, got "${formatBytes(1536)}"`);
+}
+
+function test_format_bytes_rounds_at_and_above_ten() {
+  // 10 MB: a decimal would be noise at this scale, so it is rounded away.
+  const tenMb = 10 * 1024 * 1024;
+  assert(formatBytes(tenMb) === '10 MB', `10 MB, got "${formatBytes(tenMb)}"`);
+}
+
+function test_format_bytes_climbs_to_gigabytes() {
+  const oneGb = 1024 * 1024 * 1024;
+  assert(formatBytes(oneGb) === '1.0 GB', `1 GB, got "${formatBytes(oneGb)}"`);
+}
+
+function test_format_bytes_never_goes_negative_or_nan() {
+  // Defensive: a corrupt row could carry a nonsense size, and "NaN GB" in the
+  // detail view would look like a crash.
+  assert(formatBytes(-1) === '-1 B', `negative sizes stay in bytes, got "${formatBytes(-1)}"`);
+}
+
 function main() {
   const tests = [
     test_prefers_preview_over_content,
@@ -83,6 +127,14 @@ function main() {
     test_has_content_true_for_text,
     test_has_content_false_for_null,
     test_has_content_false_for_whitespace,
+    test_has_content_false_for_image_entry,
+    test_image_preview_shows_dimensions,
+    test_image_preview_keeps_small_sizes_verbatim,
+    test_format_bytes_below_one_kilobyte,
+    test_format_bytes_one_decimal_below_ten,
+    test_format_bytes_rounds_at_and_above_ten,
+    test_format_bytes_climbs_to_gigabytes,
+    test_format_bytes_never_goes_negative_or_nan,
   ];
   let passed = 0;
   let failed = 0;

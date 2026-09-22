@@ -154,6 +154,7 @@ export const CONTENT_TYPE_LABELS: Record<ContentType, string> = {
   url: '链接',
   json: 'JSON',
   email: '邮箱',
+  image: '图片',
   unknown: '其他',
 };
 
@@ -164,5 +165,6 @@ export const CONTENT_TYPE_ICONS: Record<ContentType, string> = {
   url: '🔗',
   json: '📊',
   email: '✉️',
+  image: '🖼️',
   unknown: '📋',
 };

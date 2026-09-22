@@ -125,6 +125,23 @@ impl Database {
         }
     }
 
+    /// Fetch one entry by id. `None` when it does not exist or was deleted.
+    ///
+    /// Used by `get_entry_image` to resolve an entry's own `content_ref`, so the
+    /// frontend never gets to name a file path itself.
+    pub fn get_entry(&self, id: &str) -> rusqlite::Result<Option<ClipboardEntry>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {} FROM clipboard_entries WHERE id = ?1 AND is_deleted = 0 LIMIT 1",
+            ENTRY_COLUMNS
+        ))?;
+        let mut rows = stmt.query_map(params![id], row_to_entry)?;
+        match rows.next() {
+            Some(Ok(entry)) => Ok(Some(entry)),
+            _ => Ok(None),
+        }
+    }
+
     /// Flip the pinned flag for one entry. Returns the new state.
     ///
     /// An unknown id is not an error — it yields `false`, so a stale UI row

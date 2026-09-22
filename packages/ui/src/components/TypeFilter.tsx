@@ -2,7 +2,7 @@ import { CONTENT_TYPE_ICONS, CONTENT_TYPE_LABELS } from '@ai-clipboard/core';
 import type { ContentType } from '@ai-clipboard/types';
 
 /** Types offered as filter chips, in display order. */
-const FILTERABLE: ContentType[] = ['url', 'code', 'json', 'email', 'text'];
+const FILTERABLE: ContentType[] = ['url', 'code', 'json', 'email', 'text', 'image'];
 
 interface Props {
   active: ContentType | null;

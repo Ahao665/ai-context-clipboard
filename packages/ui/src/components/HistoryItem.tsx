@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { CONTENT_TYPE_ICONS } from '@ai-clipboard/core';
 import type { ClipboardEntry } from '@ai-clipboard/types';
 import { entryPreview } from '../lib/entry-preview';
+import { EntryThumbnail } from './EntryImage';
 
 interface Props {
   entry: ClipboardEntry;
@@ -26,6 +27,9 @@ export function HistoryItem({ entry, isSelected, onClick, onTogglePin, onDelete 
   });
   const pinned = Boolean(entry.is_pinned);
   const sensitive = entry.subtype === 'sensitive';
+  // A bitmap identifies itself better than any glyph could, so the thumbnail
+  // takes the icon's slot rather than sitting beside it.
+  const isImage = entry.content_type === 'image';
 
   // Deleting is a single click away in a list the user is also clicking to
   // open, so the button arms first and disarms itself if left alone.
@@ -40,7 +44,11 @@ export function HistoryItem({ entry, isSelected, onClick, onTogglePin, onDelete 
       className={`history-item ${isSelected ? 'selected' : ''} ${pinned ? 'pinned' : ''}`}
       onClick={onClick}
     >
-      <span className="history-icon">{icon}</span>
+      {isImage ? (
+        <EntryThumbnail entryId={entry.id} />
+      ) : (
+        <span className="history-icon">{icon}</span>
+      )}
       <div className="history-body">
         <div className="history-preview">
           {entryPreview(entry)}
