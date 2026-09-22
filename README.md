@@ -43,19 +43,29 @@ Git Bash 里编译如果报 `link: missing operand` 或 `LNK1181`，是 Git Bash
 
 装完启动就开始记录了，不用配置。要跑 AI 就按 `Alt+Space`，点右上角齿轮，选服务商、填 Key。
 
-设置里能开关「每次调用前询问」、打开「跳过敏感内容」、看当前条数、清空历史。
+应用没有主窗口概念，托盘图标就是它的存在感。左键单击托盘 = 显示/隐藏面板，右键出菜单：显示/隐藏、设置、退出。**点窗口的 ✕ 是隐藏，不是退出** —— 退出走托盘菜单。
+
+设置里能开关「每次调用前询问」和「跳过疑似敏感内容」，改快捷键，看当前条数，清空历史。
 
 快捷键：
 
 | 键 | 作用 |
 |---|---|
-| `Alt+Space` | 呼出 / 收起面板 |
+| `Alt+Space` | 呼出 / 收起面板（可在设置里改） |
 | `↑` `↓` | 选择 |
 | `Enter` | 复制选中项并关闭面板；选中命令时执行该操作 |
 | `Shift+Enter` | 打开详情 |
 | `Esc` | 有输入时清空输入，输入为空时关闭 |
 
 中文输入法组词期间（`isComposing`）按键会被忽略，不会打字打到一半把面板关掉。
+
+几个不那么显然的行为：
+
+- **列表里每条右边有删除按钮**，第一次点会变成「删除?」，再点一次才真的删，3 秒不动就自己取消。详情页右上角同理。以前只能「清空全部」。
+- **AI 结果旁边有复制按钮**，直接写回系统剪贴板。请求跑着的时候那里是「取消」。
+- **复制一条已经在历史里的内容不会产生新记录**，靠内容哈希去重。但复制 AI 结果是新内容，所以它会作为一条新记录存进去。
+- **超长内容会被截断**。超过 20 万字符只存前 20 万，然后在面板顶部提示一次；记录里的「大小」仍然是原始长度。
+- **开了「跳过敏感内容」时，被跳过的复制会在面板顶部提示**，不会静默吞掉。
 
 ## 几个实现上的取舍
 
@@ -65,7 +75,13 @@ Git Bash 里编译如果报 `link: missing operand` 或 `LNK1181`，是 Git Bash
 
 **筛选放在后端执行。** 前端过滤只能过当前加载的那批，几百条之后结果就不对了。
 
-**`packages/core` 不依赖任何框架** —— 没有 React、没有 Tauri、没有 Rust。提示词、类型识别、搜索排序都在这里，所以能用 node 直接跑测试，不用起整个应用。`src-tauri` 只管系统能力（剪贴板、数据库、快捷键、窗口），业务规则不写进 Rust。
+**剪贴板靠 `AddClipboardFormatListener` 事件驱动，不轮询。** 建一个 message-only 窗口收 `WM_CLIPBOARDUPDATE`，收到就立刻读。之前的实现是每 300 ms 轮询一次，300 ms 内连按两次 Ctrl+C 会漏掉一次。收到事件后还会重试几次 `OpenClipboard` —— 刚按完 Ctrl+C 的那一瞬间，源程序通常还占着剪贴板，立刻放弃就是漏抓的主要原因。注册监听失败会退回轮询，慢总比没有强。
+
+**来源应用是读剪贴板那一刻的前台窗口。** 按 Ctrl+C 不会改变前台窗口，所以正常情况下这就是你复制的那个程序。但如果你复制完立刻切窗口，就可能记成切过去的那个。要更准得用 `SetWinEventHook` 跟踪焦点变化，暂时没做。
+
+**快捷键注册失败不是崩溃，是正常分支。** `RegisterHotKey` 在组合被占用时会失败，`Alt+Space` 恰好是 PowerToys Run 的默认键。所以设置里改快捷键失败会明确报错，并且把原来的键恢复回去 —— 包括运行时和数据库里的值，不会出现「存了一个用不了的键」。
+
+**`packages/core` 不依赖任何框架** —— 没有 React、没有 Tauri、没有 Rust。提示词、类型识别、搜索排序都在这里，所以能用 node 直接跑测试，不用起整个应用。`src-tauri` 只管系统能力（剪贴板、数据库、快捷键、窗口、托盘），业务规则不写进 Rust。
 
 ## 支持的模型
 
@@ -80,20 +96,18 @@ Git Bash 里编译如果报 `link: missing operand` 或 `LNK1181`，是 Git Bash
 
 Ollama、vLLM、LM Studio 只要暴露兼容端点也能填。
 
+请求有 60 秒超时，也可以手动取消。
+
 ## 已知问题
 
 这些是当前版本真实存在的，不是「未来计划」：
 
-- **`Alt+Space` 是写死的，界面上改不了。** 这个键 PowerToys Run 默认也在用。被占用时应用仍会启动（不会崩），但快捷键不会生效，同时窗口不会自动隐藏，stderr 里会有一行提示。
-- **没有托盘图标，也没有开机自启。** `Cargo.toml` 里 `tray-icon` feature 是开着的，但没接代码。实际影响是：看不到应用是否在跑，也没法从界面退出，重启后要手动打开。
-- **不能删单条记录，只能清空全部。** 后端 `delete_entry` 命令和前端 `deleteEntry()` 都写好了，但没有任何界面调用它。
-- **AI 结果不能一键复制**，只能手动选中文本。
-- **AI 请求没有超时和取消。** 网络卡住的话会一直停在「思考中...」，所有 AI 按钮保持禁用，只能重启应用。
-- **开了「跳过敏感内容」之后没有任何提示。** 复制密钥类内容会静默不记录，容易以为程序坏了。
-- **只处理文本剪贴板**（`CF_UNICODETEXT`）。复制图片不会有任何反应。
-- **来源应用字段一直是空的。** `source_app` / `source_window` 建了列、界面也渲染了，但写入时恒为 `undefined`。
-- **剪贴板内容没有大小上限。** 复制一个几十 MB 的文本会照单全收。
-- **300 ms 轮询而不是事件驱动。** Windows 有 `AddClipboardFormatListener`，用它可以做到零轮询；现在的实现每秒调 3 次多 `OpenClipboard`，而且 300 ms 内连续复制两次会漏掉一次。
+- **只处理文本剪贴板**（`CF_UNICODETEXT`）。复制图片不会有任何反应，也没提示。要支持得走 `CF_DIB` + 存文件 + 缩略图，是一整块新工作。
+- **没有开机自启。** 关掉之后要手动打开，或者把快捷方式丢进启动目录。Tauri 有 autostart 插件，接上不难，但会往注册表写东西，想先问过用的人。
+- **设置面板录制快捷键时，按 `Esc` 是取消，不能绑 `Esc`。** 另外系统级组合（`Win+…`）拿不到，Windows 不让注册。
+- **敏感内容识别是启发式的**，会漏也会误判。别把它当成保险，它只是减少误存，不是防止泄露。
+- **没有代码签名**，SmartScreen 会拦。
+- **README 里没有真实录屏 GIF**，只有流程图。[docs/demo.gif.placeholder.md](docs/demo.gif.placeholder.md) 里有录制步骤和工具推荐（ScreenToGif）。
 
 ## 开发
 
@@ -105,12 +119,16 @@ pnpm typecheck               # types → core → ui
 pnpm test                    # TS 测试，自动发现 packages/*/__tests__/*.test.ts
 pnpm test content-type       # 只跑文件名匹配的
 
-cd src-tauri && cargo test --lib storage::
+cd src-tauri && cargo test --lib
 ```
 
-195 个测试：TypeScript 161（15 个文件）+ Rust 34。
+232 个测试：TypeScript 178（16 个文件）+ Rust 54。
 
-`cargo test` 里剪贴板相关的用例需要真实桌面会话，在无 GUI 的环境会挂住（不是失败，是一直等），所以日常用 `cargo test --lib storage::` 限定到存储层。CI 也这么做。
+`cargo test --lib` 里 `clipboard::writer` 那三个用例要真实桌面会话，无 GUI 环境会挂住（不是失败，是一直等），所以 CI 限定到三个纯逻辑模块：
+
+```bash
+cd src-tauri && cargo test --lib -- storage:: clipboard::watcher:: shortcut::
+```
 
 测试运行器会检查每个文件有没有输出测试摘要，退出码 0 但没摘要的算失败。之前有三个套件用 `console.assert` 断言 —— 它失败时只打日志不抛错，所以怎么跑都是绿的。
 
@@ -118,13 +136,13 @@ cd src-tauri && cargo test --lib storage::
 
 ## 贡献
 
-Issue 和 PR 都欢迎。上面「已知问题」里的任何一条都是好的入手点，其中托盘、单条删除、AI 结果复制这三项改动都不大。
+Issue 和 PR 都欢迎。上面「已知问题」里的图片剪贴板和开机自启都是自成一块的活，不太会碰到别的地方。
 
 另外最缺的是一段真实录屏 GIF —— 现在 README 里只有流程图，看不到实际操作的样子。[docs/demo.gif.placeholder.md](docs/demo.gif.placeholder.md) 里有录制步骤和工具推荐（ScreenToGif）。
 
 内容识别规则都集中在 `packages/core/src/detect/content-type.ts`，加规则加测试就行；`src-tauri/src/clipboard/` 是 Win32 专用的，要做跨平台从这里下手。
 
-提交前跑一下 `pnpm typecheck`、`pnpm test`、`cargo test --lib storage::`。
+提交前跑一下 `pnpm typecheck`、`pnpm test`、`cargo test --lib`。
 
 ## License
 

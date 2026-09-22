@@ -23,11 +23,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - name: Rust tests (storage layer)
+      - name: Rust tests (headless-safe modules)
         working-directory: src-tauri
-        # Clipboard tests need a real desktop session, which CI runners do not
-        # provide; they block indefinitely. Scope to the storage module.
+        # The clipboard round-trip tests in `clipboard::writer` drive the real
+        # Windows clipboard, which CI runners do not provide — they either block
+        # or fail on `OpenClipboard`. Everything listed here is pure data logic.
+        # Filters go after `--` because cargo itself accepts only one TESTNAME.
         # NOTE: the value MUST be quoted — a trailing "::" in a plain scalar is
         # parsed as a mapping key indicator and makes the whole file invalid.
-        run: "cargo test --lib storage::"
+        run: "cargo test --lib -- storage:: clipboard::watcher:: shortcut::"
 

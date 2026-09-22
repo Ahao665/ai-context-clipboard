@@ -2,21 +2,86 @@
 
 All notable changes to AI Context Clipboard are documented in this file.
 
-## [Unreleased]
+## [0.3.1] - 2026-09-22
+
+Everything below comes from a pass over the app asking "what does this actually
+feel like to use", rather than from a feature list. Ten of the eleven items were
+previously documented as known issues in the README; they are now fixed.
+
+### Features
+
+- **Tray icon** — the app finally has a presence outside its window: left click
+  toggles the panel, right click opens a menu with 显示/隐藏面板, 设置… and 退出.
+  Closing the window now *hides* it instead of quitting, so the clipboard watcher
+  keeps running; 退出 in the tray menu is the explicit way out. Previously there
+  was no tray at all (`tray-icon` was enabled in `Cargo.toml` but never wired
+  up), so a hidden-start app was invisible and unquittable without Task Manager.
+- **Configurable shortcut** — the panel toggle is no longer hard-coded to
+  `Alt+Space`. The settings panel records a new combination and applies it live.
+  A combination that is already owned by another program is reported and the
+  previous binding is restored, both in the database and at runtime, so a failed
+  rebind can never leave the app with no shortcut.
+- **Delete a single entry** — the history list and the detail view both have a
+  delete button (armed on first click, disarmed after 3s, so a stray click cannot
+  remove a record). `delete_entry` and `deleteEntry()` already existed but had no
+  caller anywhere in the project; the only way to remove one record was to wipe
+  the entire history.
+- **Copy an AI result** — one click writes the result back to the system
+  clipboard. Until now the only way was to select the text by hand.
+- **Cancel an in-flight AI request** — a 取消 button appears while the request is
+  running, and every request now has a 60-second timeout. Previously a stalled
+  request left the panel on 思考中... forever with every AI button disabled, and
+  the only recovery was to restart the app.
+- **Oversized clipboard content is capped** — anything longer than 200,000
+  characters is truncated before it reaches SQLite (and the FTS index), with a
+  notice explaining what happened. The recorded `content_size` keeps the
+  *original* length. Copying a whole log file used to put tens of megabytes into
+  the database in one go.
+- **Source app is recorded** — `source_app` and `source_window` are populated
+  from the foreground process and window title, so the line under each entry
+  shows where the copy came from instead of always being blank.
 
 ### Fixes
 
-- **Registering `Alt+Space` no longer crashes the app.** `register_alt_space`
-  used `.expect()`, so if the binding was already taken — PowerToys Run uses
-  `Alt+Space` by default, and Windows itself opens the window menu with it —
-  `RegisterHotKey` failed and the process panicked during setup. Because the
-  window is configured `"visible": false` and there is no tray yet, the user saw
-  nothing at all: the app simply failed to launch. The function now returns a
-  `Result`, and `run()` logs the reason and shows the window so the app stays
-  reachable instead of leaving a headless process behind.
+- **`Alt+Space` no longer crashes the app** (originally reported in 0.3.0's
+  `[Unreleased]`). `register_alt_space` used `.expect()`, so a taken binding made
+  `RegisterHotKey` fail and the process panic during setup. Combined with a
+  hidden window and no tray, the user saw nothing at all. It now returns a
+  `Result`, logs the reason, and falls back — and with the tray in place the app
+  is reachable even when no shortcut can be registered.
+- **Clipboard captures are event-driven, not polled.** A message-only window
+  registered with `AddClipboardFormatListener` now receives `WM_CLIPBOARDUPDATE`,
+  so nothing is polled and two copies inside the old 300 ms window can no longer
+  collapse into one. The read is retried briefly after the event, because the app
+  that just handled Ctrl+C usually still owns the clipboard. If the listener
+  cannot be created the watcher silently falls back to the old polling loop.
+- **Skipped sensitive content is announced.** With 「跳过疑似敏感内容」 on, a
+  matching copy used to be dropped in total silence, which reads as the app being
+  broken. A notice now says what happened — and the setting finally has a UI
+  toggle; previously it was read from the database but there was no way to turn
+  it on.
+- **Clearing the API key now takes effect.** `useAI` assigned a new `AIClient`
+  only when a key was present, so clearing the key left the old client in place
+  and requests kept going out with the previous key instead of reporting "请先在
+  设置中配置 API Key".
+- **An already-cancelled `AbortSignal` is honoured.** `addEventListener` never
+  replays an abort that happened before the listener was attached, so the client
+  now checks `signal.aborted` explicitly.
+- **Clipboard text is no longer assumed to be valid UTF-16.** The old reader
+  walked the buffer until it found a NUL with no length bound; it is now bounded
+  and reuses the same truncation path.
 
-  Note: this is a graceful degradation, not a fix for the underlying limitation.
-  The shortcut is still hard-coded and not configurable from the UI.
+### Tooling
+
+- **Rust test suite grew from 37 to 54**, and CI now runs three headless-safe
+  modules instead of one: `storage::`, `clipboard::watcher::` and `shortcut::`.
+  (`clipboard::writer` drives the real Windows clipboard and is excluded from CI;
+  it still runs in the release workflow.)
+- **TypeScript suite grew from 161 to 178**, adding coverage for the shortcut
+  spec builder (including the AZERTY `code`-vs-`key` case and the refusal to bind
+  `Escape`) and for AI request timeout/cancellation.
+- `useClipboard` imports `@tauri-apps/api/window` statically again; the dynamic
+  import was both unnecessary and a Vite warning.
 
 ## [0.3.0] - 2026-09-19
 
