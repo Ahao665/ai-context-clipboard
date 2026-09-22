@@ -76,7 +76,7 @@ mod tests {
         let text = "hello clipboard 剪贴板";
         super::write_clipboard_text(text).expect("write should succeed");
         let read = crate::clipboard::watcher::get_clipboard_text();
-        assert_eq!(read.text.as_deref(), Some(text));
+        assert_eq!(read.as_deref(), Some(text));
     }
 
     #[test]
@@ -85,7 +85,7 @@ mod tests {
         let text = "你好，世界! 🚀 测试";
         super::write_clipboard_text(text).expect("write should succeed");
         let read = crate::clipboard::watcher::get_clipboard_text();
-        assert_eq!(read.text.as_deref(), Some(text));
+        assert_eq!(read.as_deref(), Some(text));
     }
 
     #[test]
@@ -93,6 +93,6 @@ mod tests {
         let _guard = CLIPBOARD_LOCK.lock().unwrap();
         super::write_clipboard_text("").expect("empty write should succeed");
         let read = crate::clipboard::watcher::get_clipboard_text();
-        assert_eq!(read.text.as_deref(), Some(""));
+        assert_eq!(read.as_deref(), Some(""));
     }
 }
