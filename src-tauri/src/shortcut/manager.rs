@@ -2,11 +2,17 @@ use tauri::Manager;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 /// Register the Alt+Space shortcut during app setup.
-pub fn register_alt_space(app: &tauri::AppHandle) {
+///
+/// Returns an error instead of panicking when the binding is unavailable.
+/// `Alt+Space` is a popular choice — PowerToys Run uses it by default, and
+/// Windows itself opens the window menu with it — so `RegisterHotKey` can
+/// legitimately fail on a machine where this app is otherwise perfectly usable.
+/// The caller decides how to degrade; see `run()` in `lib.rs`.
+pub fn register_alt_space(app: &tauri::AppHandle) -> Result<(), String> {
     let shortcut = Shortcut::new(Some(Modifiers::ALT), Code::Space);
     app.global_shortcut()
         .register(shortcut)
-        .expect("failed to register Alt+Space shortcut");
+        .map_err(|err| err.to_string())
 }
 
 /// Toggle the main window visibility.

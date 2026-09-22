@@ -43,7 +43,18 @@ pub fn run() {
 
             app.manage(db);
 
-            shortcut::manager::register_alt_space(app.handle());
+            // The window starts hidden and there is no tray yet, so Alt+Space is
+            // the only way in. If the binding is taken (PowerToys Run uses it by
+            // default), show the window rather than leaving an unreachable
+            // process behind — and never panic, which would look like the app
+            // simply failing to launch.
+            if let Err(err) = shortcut::manager::register_alt_space(app.handle()) {
+                eprintln!("[shortcut] Alt+Space 注册失败，可能已被其他程序占用: {err}");
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
 
             let app_handle = app.handle().clone();
             std::thread::spawn(move || {

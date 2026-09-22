@@ -2,6 +2,22 @@
 
 All notable changes to AI Context Clipboard are documented in this file.
 
+## [Unreleased]
+
+### Fixes
+
+- **Registering `Alt+Space` no longer crashes the app.** `register_alt_space`
+  used `.expect()`, so if the binding was already taken — PowerToys Run uses
+  `Alt+Space` by default, and Windows itself opens the window menu with it —
+  `RegisterHotKey` failed and the process panicked during setup. Because the
+  window is configured `"visible": false` and there is no tray yet, the user saw
+  nothing at all: the app simply failed to launch. The function now returns a
+  `Result`, and `run()` logs the reason and shows the window so the app stays
+  reachable instead of leaving a headless process behind.
+
+  Note: this is a graceful degradation, not a fix for the underlying limitation.
+  The shortcut is still hard-coded and not configurable from the UI.
+
 ## [0.3.0] - 2026-09-19
 
 ### Features
